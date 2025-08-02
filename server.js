@@ -24,6 +24,7 @@ const path = require("path");
 const fs = require("fs");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const { MongoClient } = require("mongodb");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,10 +59,17 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// In-file JSON DB
+// Database Configuration
+const MONGODB_URI = process.env.MONGODB_URI;
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, "db.json");
+const DB_TYPE = process.env.DB_TYPE || 'file'; // 'mongodb' or 'file'
 const DB_VERSION = 2;
 
+// MongoDB connection
+let mongoClient = null;
+let mongoDb = null;
+
+// File-based DB functions (fallback)
 function loadDB() {
   try {
     const raw = fs.readFileSync(DB_FILE, "utf-8");
@@ -70,9 +78,9 @@ function loadDB() {
     return { sites: {} };
   }
 }
+
 function saveDB(db) {
   try {
-    // Ensure directory exists
     const dir = path.dirname(DB_FILE);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -84,7 +92,74 @@ function saveDB(db) {
   }
 }
 
-let db = loadDB();
+// MongoDB functions
+async function connectMongoDB() {
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI environment variable is required for MongoDB mode');
+  }
+  
+  try {
+    mongoClient = new MongoClient(MONGODB_URI);
+    await mongoClient.connect();
+    mongoDb = mongoClient.db('cryptexa');
+    console.log('✅ Connected to MongoDB');
+    
+    // Create index for better performance
+    await mongoDb.collection('sites').createIndex({ site: 1 }, { unique: true });
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error);
+    throw error;
+  }
+}
+
+// Database abstraction layer
+class Database {
+  constructor() {
+    this.fileDb = loadDB();
+  }
+
+  async getSite(siteKey) {
+    if (DB_TYPE === 'mongodb' && mongoDb) {
+      const doc = await mongoDb.collection('sites').findOne({ site: siteKey });
+      return doc ? {
+        encryptedContent: doc.encryptedContent,
+        currentHashContent: doc.currentHashContent,
+        updatedAt: doc.updatedAt
+      } : null;
+    } else {
+      return this.fileDb.sites[siteKey] || null;
+    }
+  }
+
+  async saveSite(siteKey, data) {
+    if (DB_TYPE === 'mongodb' && mongoDb) {
+      await mongoDb.collection('sites').replaceOne(
+        { site: siteKey },
+        {
+          site: siteKey,
+          encryptedContent: data.encryptedContent,
+          currentHashContent: data.currentHashContent,
+          updatedAt: data.updatedAt
+        },
+        { upsert: true }
+      );
+    } else {
+      this.fileDb.sites[siteKey] = data;
+      saveDB(this.fileDb);
+    }
+  }
+
+  async deleteSite(siteKey) {
+    if (DB_TYPE === 'mongodb' && mongoDb) {
+      await mongoDb.collection('sites').deleteOne({ site: siteKey });
+    } else {
+      delete this.fileDb.sites[siteKey];
+      saveDB(this.fileDb);
+    }
+  }
+}
+
+const database = new Database();
 
 app.use(express.json({ 
   limit: MAX_CONTENT_SIZE,
@@ -130,41 +205,49 @@ app.get("/:site", (req, res, next) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Get site blob in ProtectedText-like JSON shape
-app.get("/api/json", (req, res) => {
-  const site = String(req.query.site || "").trim();
-  if (!site) {
-    return res.status(400).json({ status: "error", message: "Missing site" });
-  }
-  const entry = db.sites[site];
-  if (!entry) {
+app.get("/api/json", async (req, res) => {
+  try {
+    const site = String(req.query.site || "").trim();
+    if (!site) {
+      return res.status(400).json({ status: "error", message: "Missing site" });
+    }
+    
+    const entry = await database.getSite(site);
+    if (!entry) {
+      return res.json({
+        status: "success",
+        isNew: true,
+        eContent: "",
+        currentDBVersion: DB_VERSION,
+        expectedDBVersion: DB_VERSION,
+        currentHashContent: null
+      });
+    }
+    
     return res.json({
       status: "success",
-      isNew: true,
-      eContent: "",
+      isNew: false,
+      eContent: entry.encryptedContent,
       currentDBVersion: DB_VERSION,
       expectedDBVersion: DB_VERSION,
-      currentHashContent: null
+      currentHashContent: entry.currentHashContent || null
     });
+  } catch (error) {
+    console.error('Get endpoint error:', error);
+    return res.status(500).json({ status: "error", message: "Failed to retrieve data" });
   }
-  return res.json({
-    status: "success",
-    isNew: false,
-    eContent: entry.encryptedContent,
-    currentDBVersion: DB_VERSION,
-    expectedDBVersion: DB_VERSION,
-    currentHashContent: entry.currentHashContent || null
-  });
 });
 
 // Save encrypted content with overwrite protection
-app.post("/api/save", (req, res) => {
+app.post("/api/save", async (req, res) => {
   try {
     const { site, initHashContent, currentHashContent, encryptedContent } = req.body || {};
     if (!site || typeof initHashContent !== "string" || typeof currentHashContent !== "string" || typeof encryptedContent !== "string") {
       return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
+    
     const siteKey = String(site).trim();
-    const existing = db.sites[siteKey];
+    const existing = await database.getSite(siteKey);
 
     if (existing) {
       if ((existing.currentHashContent || "") !== initHashContent) {
@@ -175,13 +258,13 @@ app.post("/api/save", (req, res) => {
       }
     }
 
-    db.sites[siteKey] = {
+    const siteData = {
       encryptedContent,
       currentHashContent, // becomes the new baseline to be returned to clients
       updatedAt: Date.now()
     };
     
-    saveDB(db);
+    await database.saveSite(siteKey, siteData);
     return res.json({ status: "success", currentHashContent });
   } catch (error) {
     console.error('Save endpoint error:', error);
@@ -190,19 +273,21 @@ app.post("/api/save", (req, res) => {
 });
 
 // Delete site with overwrite protection
-app.post("/api/delete", (req, res) => {
+app.post("/api/delete", async (req, res) => {
   try {
     const { site, initHashContent } = req.body || {};
     if (!site || typeof initHashContent !== "string") {
       return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
+    
     const siteKey = String(site).trim();
-    const existing = db.sites[siteKey];
+    const existing = await database.getSite(siteKey);
 
     if (!existing) {
       // Consider already deleted
       return res.json({ status: "success" });
     }
+    
     if ((existing.currentHashContent || "") !== initHashContent) {
       return res.json({
         status: "error",
@@ -210,8 +295,7 @@ app.post("/api/delete", (req, res) => {
       });
     }
 
-    delete db.sites[siteKey];
-    saveDB(db);
+    await database.deleteSite(siteKey);
     return res.json({ status: "success" });
   } catch (error) {
     console.error('Delete endpoint error:', error);
@@ -241,21 +325,51 @@ app.use((req, res) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Cryptexa server running on port ${PORT}`);
-  console.log(`📝 Environment: ${NODE_ENV}`);
-  console.log(`💾 Database file: ${DB_FILE}`);
-  if (NODE_ENV === 'development') {
-    console.log(`🌐 Local access: http://localhost:${PORT}`);
+async function gracefulShutdown(signal) {
+  console.log(`${signal} received, shutting down gracefully`);
+  
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+      console.log('✅ MongoDB connection closed');
+    } catch (error) {
+      console.error('❌ Error closing MongoDB connection:', error);
+    }
   }
-});
+  
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Initialize database and start server
+async function startServer() {
+  try {
+    // Initialize MongoDB if configured
+    if (DB_TYPE === 'mongodb') {
+      await connectMongoDB();
+    }
+    
+    app.listen(PORT, () => {
+      console.log(`🚀 Cryptexa server running on port ${PORT}`);
+      console.log(`📝 Environment: ${NODE_ENV}`);
+      console.log(`💾 Database type: ${DB_TYPE}`);
+      
+      if (DB_TYPE === 'mongodb') {
+        console.log(`🍃 MongoDB: Connected`);
+      } else {
+        console.log(`📁 Database file: ${DB_FILE}`);
+      }
+      
+      if (NODE_ENV === 'development') {
+        console.log(`🌐 Local access: http://localhost:${PORT}`);
+      }
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
