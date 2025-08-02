@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cryptexa</title>
+  <script>
+  // Early theme application to avoid flash; default to dark, honor stored pref
+  (function(){
+    try{
+      var pref = localStorage.getItem('theme-preference');
+      var theme = pref || 'dark';
+      var c = document.documentElement.classList;
+      c.remove('theme-dark','theme-light');
+      c.add(theme === 'light' ? 'theme-light' : 'theme-dark');
+    }catch(e){}
+  })();
+  </script>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    /* minimal inline styles for landing section reusing CSS vars */
+    .landing {
+      display: none;
+      max-width: 720px;
+      margin: 60px auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 30px var(--shadow);
+    }
+    .landing h1 { margin: 0 0 8px 0; color: var(--brand); }
+    .landing p { color: var(--muted); margin: 6px 0 14px 0; }
+    .landing .row { display: flex; gap: 8px; }
+    .landing input[type="text"], .landing input[type="password"] {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+    }
+    .landing button {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #1c2942, #19243a);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .landing .muted { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    /* Theme toggle minimal styling to integrate into menubar */
+    .theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;box-shadow:var(--shadow-sm)}
+    .theme-toggle .icon{width:18px;height:18px;display:inline-block;line-height:1}
+  </style>
+</head>
+<body>
+  <div id="menubar">
+    <div id="brand">Cryptexa</div>
+    <div id="menubar-buttons">
+      <button id="button-save" title="Save (Ctrl+S)">Save</button>
+      <button id="button-savenew" title="Change Password">Change Password</button>
+      <button id="button-reload" title="Reload">Reload</button>
+      <button id="button-delete" title="Delete All">Delete</button>
+      <!-- Theme Toggle -->
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle color theme" aria-live="polite" aria-pressed="true">
+        <span class="icon" aria-hidden="true">🌙</span>
+        <span class="label">Dark</span>
+      </button>
+      <div id="status-indicator" class="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text">Ready</span>
+        </div>
+
+    </div>
+  </div>
+
+  <!-- Landing page -->
+  <section id="landing" class="landing">
+    <h1>Secure Notes</h1>
+    <p>Enter a unique site name to create or access your encrypted notes. Optionally add a password in the URL.</p>
+    <div class="row" style="margin-bottom:8px;">
+      <input type="text" id="landing-site" placeholder="e.g. my-notes" />
+      <button id="landing-open">Open</button>
+    </div>
+    <p class="muted">This app keeps all encryption in your browser. The server only stores encrypted text. Opening will navigate to <code>?site=<name></code>. You can also use <code>?site=<name>&password=<pass></code> to auto-decrypt.</p>
+  </section>
+
+  <div id="main-content-outter">
+    <div id="tabs" class="tabs">
+      <div class="tab-headers">
+        <div class="tab-headers-container">
+          <li class="tab-header active" data-tab-id="tab-0">
+            <a href="#tab-0" class="tab-title">Empty Tab</a>
+            <span class="close" title="Remove Tab">&times;</span>
+          </li>
+        </div>
+        <button id="add_tab" class="add-tab" title="Add Tab">+</button>
+      </div>
+      <div id="tab-0" class="tab-panel active">
+        <div class="editor-wrap">
+          <div class="line-gutter" aria-hidden="true"></div>
+          <textarea rows="1" cols="1" class="textarea-contents" placeholder="your text goes here..."></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="outer-toast" style="display:none;"><div id="toast"></div></div>
+
+  <div id="loader" class="loader" style="display:none;">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Dialogs -->
+  <dialog id="dialog-password" class="app-dialog">
+    <form method="dialog">
+      <h3>Decrypt this site</h3>
+      <p class="additional-text">Enter your password to decrypt notes.</p>
+      <input type="password" id="enterpassword" placeholder="Password" autocomplete="current-password" />
+      <menu>
+        <button value="ok" class="primary" style="min-width:120px">Decrypt</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-new-password" class="app-dialog">
+    <form method="dialog">
+      <h3 id="dialog-new-password-title">Create password</h3>
+      <p class="additional-text">Enter and confirm your password.</p>
+      <input type="password" id="newpassword1" placeholder="New password" autocomplete="new-password" />
+      <input type="password" id="newpassword2" placeholder="Confirm new password" autocomplete="new-password" />
+      <div id="passwords-empty" class="hint error" style="display:none;">Password cannot be empty</div>
+      <div id="passwords-dont-match" class="hint error" style="display:none;">Passwords do not match</div>
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-confirm-reload" class="app-dialog">
+    <form method="dialog">
+      <h3>Reload</h3>
+      <p>You have unsaved changes. Reload anyway?</p>
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger">Reload</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-confirm-delete-tab" class="app-dialog">
+    <form method="dialog">
+      <h3>Delete tab</h3>
+      <p>This will remove the current tab. Continue?</p>
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger">Delete tab</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-confirm-delete-site" class="app-dialog">
+    <form method="dialog">
+      <h3>Delete all notes</h3>
+      <p>This will delete all saved notes from this browser. This action cannot be undone.</p>
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger">Delete</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- About Dialog -->
+  <dialog id="about-dialog" class="app-dialog">
+    <form method="dialog">
+      <h3>About Cryptexa</h3>
+      <p>A secure, client-side encrypted notes application.</p>
+      <p><strong>Version:</strong> 1.0.0</p>
+      <p><strong>Encryption:</strong> AES-256-GCM</p>
+      <p>Your notes are encrypted in your browser before being sent to the server. The server never sees your password or unencrypted content.</p>
+      <menu>
+        <button type="button" class="secondary" onclick="showKeyboardShortcuts()">Keyboard Shortcuts</button>
+        <button type="button" class="secondary">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Keyboard Shortcuts Dialog -->
+  <dialog id="shortcuts-dialog" class="app-dialog">
+    <form method="dialog">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="shortcuts-grid">
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + S</kbd>
+          <span>Save current note</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + Shift + S</kbd>
+          <span>Save with new password</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + R</kbd>
+          <span>Reload from server</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + T</kbd>
+          <span>New tab</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + W</kbd>
+          <span>Close current tab</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + E</kbd>
+          <span>Export encrypted backup</span>
+        </div>
+
+        <div class="shortcut-item">
+          <kbd>Ctrl/Cmd + 1-9</kbd>
+          <span>Switch to tab by number</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Escape</kbd>
+          <span>Focus editor</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>Enter</kbd>
+          <span>Submit password dialogs</span>
+        </div>
+      </div>
+      <menu>
+        <button type="button" class="secondary">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Delete Confirmation Dialog -->
+  <dialog id="delete-confirm-dialog" class="app-dialog">
+    <form method="dialog">
+      <h3>⚠️ Confirm Delete</h3>
+      <p>Are you sure you want to permanently delete this site and all its content?</p>
+      <p><strong>This action cannot be undone.</strong></p>
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger">Delete Permanently</button>
+      </menu>
+    </form>
+  </dialog>
+
+
+
+  <script>
+    // Landing behavior: if no ?site and no path segment, show landing and hide editor area
+    (function(){
+      function getParam(n){const u=new URL(window.location.href);const v=u.searchParams.get(n);return v&&v.trim().length?v.trim():null;}
+      function getSiteFromURL() {
+        const path = window.location.pathname || "/";
+        const seg = path.replace(/^\/+|\/+$/g, "");
+        if (seg && seg !== "api") return seg;
+        const qp = getParam("site");
+        return qp || null;
+      }
+      const site = getSiteFromURL();
+      const landing = document.getElementById("landing");
+      const main = document.getElementById("main-content-outter");
+      const menubarBtns = document.getElementById("menubar-buttons");
+      if(!site){
+        landing.style.display = "block";
+        main.style.display = "none";
+        // Disable editor buttons on landing
+        Array.from(menubarBtns.querySelectorAll("button")).forEach(b=>b.disabled=true);
+        const input = document.getElementById("landing-site");
+        const openBtn = document.getElementById("landing-open");
+        openBtn.addEventListener("click", ()=>{
+          const val = (input.value || "").trim();
+          if(!val){ alert("Please enter a site name"); return; }
+          const pw = getParam("password");
+          // Navigate to pretty URL /:site with optional ?password (raw) or ?password=...
+          let dest = window.location.origin + "/" + encodeURIComponent(val);
+          if (pw) {
+            // If password contains '=' assume already key form, else append as named param for clarity
+            if (pw.includes("=")) dest += "?" + pw;
+            else dest += "?password=" + encodeURIComponent(pw);
+          }
+          window.location.href = dest;
+        });
+      } else {
+        landing.style.display = "none";
+        main.style.display = "block";
+      }
+    })();
+  </script>
+
+  <script src="./app.js"></script>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+</body>
+</html>

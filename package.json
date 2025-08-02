@@ -1,0 +1,22 @@
+{
+  "name": "cryptexa-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tabbed, password-encrypted notes. Frontend + Node/Express backend storing only encrypted blobs.",
+  "main": "server.js",
+  "scripts": {
+    "start": "set NODE_ENV=production && node server.js",
+    "dev": "set NODE_ENV=development && node server.js",
+    "prod": "set NODE_ENV=production && node server.js",
+    "build": "node build.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5"
+  }
+}
