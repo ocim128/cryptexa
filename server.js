@@ -71,7 +71,17 @@ function loadDB() {
   }
 }
 function saveDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+  } catch (error) {
+    console.error('Database save error:', error);
+    throw error;
+  }
 }
 
 let db = loadDB();
@@ -148,55 +158,65 @@ app.get("/api/json", (req, res) => {
 
 // Save encrypted content with overwrite protection
 app.post("/api/save", (req, res) => {
-  const { site, initHashContent, currentHashContent, encryptedContent } = req.body || {};
-  if (!site || typeof initHashContent !== "string" || typeof currentHashContent !== "string" || typeof encryptedContent !== "string") {
-    return res.status(400).json({ status: "error", message: "Missing required fields" });
-  }
-  const siteKey = String(site).trim();
-  const existing = db.sites[siteKey];
-
-  if (existing) {
-    if ((existing.currentHashContent || "") !== initHashContent) {
-      return res.json({
-        status: "error",
-        message: "Site was modified in the meantime."
-      });
+  try {
+    const { site, initHashContent, currentHashContent, encryptedContent } = req.body || {};
+    if (!site || typeof initHashContent !== "string" || typeof currentHashContent !== "string" || typeof encryptedContent !== "string") {
+      return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
+    const siteKey = String(site).trim();
+    const existing = db.sites[siteKey];
+
+    if (existing) {
+      if ((existing.currentHashContent || "") !== initHashContent) {
+        return res.json({
+          status: "error",
+          message: "Site was modified in the meantime."
+        });
+      }
+    }
+
+    db.sites[siteKey] = {
+      encryptedContent,
+      currentHashContent, // becomes the new baseline to be returned to clients
+      updatedAt: Date.now()
+    };
+    
+    saveDB(db);
+    return res.json({ status: "success", currentHashContent });
+  } catch (error) {
+    console.error('Save endpoint error:', error);
+    return res.status(500).json({ status: "error", message: "Failed to save data" });
   }
-
-  db.sites[siteKey] = {
-    encryptedContent,
-    currentHashContent, // becomes the new baseline to be returned to clients
-    updatedAt: Date.now()
-  };
-  saveDB(db);
-
-  return res.json({ status: "success", currentHashContent });
 });
 
 // Delete site with overwrite protection
 app.post("/api/delete", (req, res) => {
-  const { site, initHashContent } = req.body || {};
-  if (!site || typeof initHashContent !== "string") {
-    return res.status(400).json({ status: "error", message: "Missing required fields" });
-  }
-  const siteKey = String(site).trim();
-  const existing = db.sites[siteKey];
+  try {
+    const { site, initHashContent } = req.body || {};
+    if (!site || typeof initHashContent !== "string") {
+      return res.status(400).json({ status: "error", message: "Missing required fields" });
+    }
+    const siteKey = String(site).trim();
+    const existing = db.sites[siteKey];
 
-  if (!existing) {
-    // Consider already deleted
+    if (!existing) {
+      // Consider already deleted
+      return res.json({ status: "success" });
+    }
+    if ((existing.currentHashContent || "") !== initHashContent) {
+      return res.json({
+        status: "error",
+        message: "Site was modified in the meantime. Reload first."
+      });
+    }
+
+    delete db.sites[siteKey];
+    saveDB(db);
     return res.json({ status: "success" });
+  } catch (error) {
+    console.error('Delete endpoint error:', error);
+    return res.status(500).json({ status: "error", message: "Failed to delete data" });
   }
-  if ((existing.currentHashContent || "") !== initHashContent) {
-    return res.json({
-      status: "error",
-      message: "Site was modified in the meantime. Reload first."
-    });
-  }
-
-  delete db.sites[siteKey];
-  saveDB(db);
-  return res.json({ status: "success" });
 });
 
 // Global error handler
