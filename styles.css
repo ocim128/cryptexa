@@ -101,7 +101,7 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
 .tab-header.dragging{opacity:0.5;transform:rotate(2deg)}
 .tab-headers-container{position:relative}
 .tab-headers-container .drag-placeholder{background:var(--accent);opacity:0.3;height:2px;position:absolute;top:0;left:0;right:0;z-index:1000;transition:all 0.2s ease}
-.add-tab{width:28px;height:28px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);color:#fff;cursor:pointer;transition:var(--transition);flex-shrink:0;margin:0 8px;position:relative;z-index:10}
+.add-tab{width:28px;height:28px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);color:var(--text);cursor:pointer;transition:var(--transition);flex-shrink:0;margin:0 8px;position:relative;z-index:10}
 .add-tab:hover{filter:brightness(1.1);transform:scale(1.1);background:var(--tab)}
 
 .tab-panel{display:none;height:calc(100% - 8px);margin-top:8px;border-radius:var(--radius);background:var(--bg);box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid var(--border)}
