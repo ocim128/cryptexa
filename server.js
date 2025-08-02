@@ -31,6 +31,11 @@ const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const MAX_CONTENT_SIZE = process.env.MAX_CONTENT_SIZE || '10mb';
 
+// Trust proxy for Render deployment
+if (NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
