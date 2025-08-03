@@ -491,6 +491,7 @@ class ClientState {
           this.currentDBVersion = this.expectedDBVersion;
           this.isTextModified = false;
           updateStatusIndicator("ready", "Ready");
+          updateLastSaved();
           finishInitialization(true);
         } else if (data.message) {
           if (data.message.includes("modified in the meantime")) {
@@ -1550,11 +1551,29 @@ const updateStatusIndicator = (status, text) => {
   statusText.textContent = text || "Ready";
 };
 
+const updateLastSaved = () => {
+  const lastSavedElement = qs("#last-saved");
+  if (!lastSavedElement) return;
+  
+  const now = new Date();
+  const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  lastSavedElement.textContent = `Last saved: ${timeString}`;
+  lastSavedElement.style.display = 'inline';
+};
+
+const hideLastSaved = () => {
+  const lastSavedElement = qs("#last-saved");
+  if (lastSavedElement) {
+    lastSavedElement.style.display = 'none';
+  }
+};
+
   
   // Listen for text changes to update status
   document.addEventListener("input", e => {
     if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
       updateStatusIndicator("modified", "Modified");
+      hideLastSaved();
     }
   });
 

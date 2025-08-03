@@ -375,6 +375,7 @@ html.password-mode #main-content-outter{ /* classes toggled from JS for stronger
 .status-indicator.saving .status-dot{background:var(--warning)}
 .status-indicator.error .status-dot{background:var(--danger)}
 .status-indicator.modified .status-dot{background:var(--accent)}
+.last-saved{font-size:.75em;color:var(--muted);margin-left:8px;opacity:0.8}
 
 .hidden{display:none!important}
 .loading{opacity:.5;pointer-events:none}
