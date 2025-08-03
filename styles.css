@@ -24,6 +24,8 @@
   --backdrop:rgba(15,17,21,.6);
 }
 
+
+
 /* Light theme override */
 :root.theme-light{
   color-scheme: light;
@@ -373,6 +375,7 @@ html.password-mode #main-content-outter{ /* classes toggled from JS for stronger
 .status-indicator.saving .status-dot{background:var(--warning)}
 .status-indicator.error .status-dot{background:var(--danger)}
 .status-indicator.modified .status-dot{background:var(--accent)}
+
 .hidden{display:none!important}
 .loading{opacity:.5;pointer-events:none}
 .error{color:var(--danger)!important}

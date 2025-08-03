@@ -237,6 +237,9 @@ function stopHealthMonitoring() {
   }
 }
 
+
+
+
 // ---------- Utilities: Network and Error Handling ----------
 
 // Retry fetch with exponential backoff
@@ -246,7 +249,7 @@ async function fetchWithRetry(url, options = {}, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
       
       const response = await fetch(url, {
         ...options,
@@ -450,6 +453,8 @@ class ClientState {
   async saveSite(newPass) {
     const executeSaveSite = async (passwordToUse) => {
       this.content = await getContentFromTabs();
+      
+      
       const newHashContent = this.computeHashContentForDBVersion(this.content, passwordToUse, this.expectedDBVersion);
 
       // Create new salt every save for portability; embed in ciphertext
@@ -488,7 +493,11 @@ class ClientState {
           updateStatusIndicator("ready", "Ready");
           finishInitialization(true);
         } else if (data.message) {
-          toast("Failed! " + data.message, "error", 2500);
+          if (data.message.includes("modified in the meantime")) {
+            toast("Failed! Content was modified by another session. Use Ctrl+R to reload and see changes, then try saving again.", "error", 5000);
+          } else {
+            toast("Failed! " + data.message, "error", 2500);
+          }
           focusActiveTextarea();
         } else {
           toast("Save failed!", "error", 2500);
@@ -637,6 +646,9 @@ class ClientState {
     // Set initHashContent baseline to server's current
     this.initHashContent = this.remote.currentHashContent || null;
   }
+
+  // Check if content has been modified by another session
+
 
   async reloadSite() {
     const executeReload = async () => {
@@ -1457,11 +1469,6 @@ function wireEvents() {
       ta.selectionStart = ta.selectionEnd = start + 4;
       state.updateIsTextModified(true);
       return;
-    }
-    if ((e.ctrlKey || e.metaKey) && (key.toLowerCase() === "s" || e.keyCode === 83)) {
-      qs("#button-save").focus();
-      qs("#button-save").click();
-      e.preventDefault();
     }
   });
 
