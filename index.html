@@ -8,6 +8,8 @@
   <meta name="robots" content="noindex, nofollow" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Cryptexa</title>
+  <link rel="icon" type="image/png" href="icon.png" />
+  <link rel="shortcut icon" type="image/png" href="icon.png" />
   <script>
   // Early theme application to avoid flash; default to light, honor stored pref
   (function(){
@@ -25,13 +27,13 @@
     /* Modern, sleek landing page styles */
     .landing {
       display: none;
-      max-width: 480px;
-      margin: 80px auto;
+      max-width: 520px;
+      margin: 60px auto;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 48px 40px;
-      box-shadow: 0 20px 60px var(--shadow);
+      border-radius: 24px;
+      padding: 60px 48px;
+      box-shadow: 0 25px 80px var(--shadow);
       text-align: center;
       position: relative;
       overflow: hidden;
@@ -42,51 +44,76 @@
       top: 0;
       left: 0;
       right: 0;
-      height: 4px;
+      height: 6px;
       background: var(--gradient-brand);
-      border-radius: 20px 20px 0 0;
+      border-radius: 24px 24px 0 0;
     }
-    .landing .emoji {
-      font-size: 48px;
-      margin-bottom: 16px;
+    .landing::after {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(122, 162, 255, 0.03) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .landing > * {
+      position: relative;
+      z-index: 1;
+    }
+    .landing .logo {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
       display: block;
-      animation: float 3s ease-in-out infinite;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(122, 162, 255, 0.2);
+      animation: float 4s ease-in-out infinite;
+      background: var(--panel-2);
+      padding: 8px;
     }
     @keyframes float {
-      0%, 100% { transform: translateY(0px); }
-      50% { transform: translateY(-8px); }
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-10px) scale(1.02); }
     }
     .landing h1 {
-      margin: 0 0 12px 0;
+      margin: 0 0 16px 0;
       color: var(--text);
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      background: var(--gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     .landing .subtitle {
-      color: var(--brand);
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 24px;
+      color: var(--muted);
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 32px;
       opacity: 0.9;
+      line-height: 1.4;
     }
     .landing p {
       color: var(--muted);
-      margin: 0 0 32px 0;
-      font-size: 15px;
+      margin: 0 0 40px 0;
+      font-size: 16px;
       line-height: 1.6;
     }
     .landing .input-group {
       display: flex;
-      gap: 12px;
-      margin-bottom: 24px;
+      gap: 16px;
+      margin-bottom: 32px;
       align-items: stretch;
     }
     .landing input[type="text"] {
       flex: 1;
-      padding: 16px 20px;
+      padding: 18px 24px;
       border: 2px solid var(--border);
-      border-radius: 12px;
+      border-radius: 16px;
       background: var(--panel-2);
       color: var(--text);
       font-size: 16px;
@@ -95,45 +122,65 @@
     }
     .landing input[type="text"]:focus {
       border-color: var(--brand);
-      box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.1);
-      transform: translateY(-1px);
+      box-shadow: 0 0 0 6px rgba(122, 162, 255, 0.1);
+      transform: translateY(-2px);
     }
     .landing input[type="text"]::placeholder {
       color: var(--muted);
       opacity: 0.7;
     }
     .landing button {
-      padding: 16px 24px;
-      border-radius: 12px;
+      padding: 18px 32px;
+      border-radius: 16px;
       border: none;
       background: var(--gradient-brand);
       color: white;
       cursor: pointer;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 700;
       transition: all 0.3s ease;
-      box-shadow: 0 4px 12px rgba(122, 162, 255, 0.3);
+      box-shadow: 0 6px 20px rgba(122, 162, 255, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    .landing button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+    .landing button:hover::before {
+      left: 100%;
     }
     .landing button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(122, 162, 255, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(122, 162, 255, 0.4);
     }
     .landing button:active {
-      transform: translateY(0);
+      transform: translateY(-1px);
     }
     .landing .footer-text {
-      font-size: 13px;
+      font-size: 14px;
       color: var(--muted);
-      margin-top: 24px;
+      margin-top: 32px;
       opacity: 0.8;
-      line-height: 1.5;
+      line-height: 1.6;
+      background: var(--panel-2);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
     }
     .landing .footer-text code {
-      background: var(--panel-2);
-      padding: 2px 6px;
-      border-radius: 4px;
+      background: var(--bg);
+      padding: 4px 8px;
+      border-radius: 6px;
       font-family: ui-monospace, monospace;
-      font-size: 12px;
+      font-size: 13px;
+      border: 1px solid var(--border);
     }
     /* Theme toggle minimal styling to integrate into menubar */
     .theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;box-shadow:var(--shadow-sm)}
@@ -168,17 +215,17 @@
 
   <!-- Landing page -->
   <section id="landing" class="landing">
-    <span class="emoji">🔐</span>
-    <h1>Your Secret Vault</h1>
-    <p class="subtitle">Where your thoughts go to hide from the world</p>
-    <p>Pick a unique name for your digital diary. Make it memorable, make it yours, make it impossible for your cat to guess.</p>
+    <img src="icon.png" alt="Cryptexa Logo" class="logo" />
+    <h1>Cryptexa</h1>
+    <p class="subtitle">Where your secrets go to party (privately)</p>
+    <p>Give your digital diary a name that's more creative than "diary123". Your thoughts deserve a VIP lounge, not a cardboard box under your bed.</p>
     <div class="input-group">
-      <input type="text" id="landing-site" placeholder="my-secret-thoughts" />
-      <button id="landing-open">Let's Go! 🚀</button>
+      <input type="text" id="landing-site" placeholder="definitely-not-my-diary" />
+      <button id="landing-open">Go 🚀</button>
     </div>
     <div class="footer-text">
-      <strong>Fort Knox level security:</strong> Everything stays encrypted in your browser. We're so secure, even we can't read your notes! 🤫<br>
-      <small>Pro tip: Add <code>?password=yourpass</code> to the URL for instant access (but maybe don't use 'password123')</small>
+      <strong>🔒 Fort Knox wishes it was this secure:</strong> We encrypt everything so hard, even we can't peek at your embarrassing poetry. AES-256-GCM because we're fancy like that.<br>
+      <strong>🚀 Pro hacker move:</strong> Add <code>?password=yourpass</code> to skip the small talk (but please don't use "password123" - we're judging you).
     </div>
   </section>
 
