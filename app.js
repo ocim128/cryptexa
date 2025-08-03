@@ -44,11 +44,129 @@ const URL_PASSWORD = (function() {
   return null;
 })();
 
+// ---------- Keyboard Shortcuts ----------
+function initKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Skip if user is typing in input fields
+    if (e.target.tagName === 'INPUT' && e.target.type !== 'color') return;
+    
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+    const isAlt = e.altKey;
+    
+    // Ctrl+S: Save
+    if (isCtrl && e.key === 's') {
+      e.preventDefault();
+      document.getElementById('button-save')?.click();
+      return;
+    }
+    
+    // Ctrl+Alt+T: New Tab
+    if (isCtrl && isAlt && (e.key === 't' || e.key === 'T')) {
+      e.preventDefault();
+      document.getElementById('add_tab')?.click();
+      return;
+    }
+    
+    // Ctrl+R: Reload
+    if (isCtrl && e.key === 'r') {
+      e.preventDefault();
+      document.getElementById('button-reload')?.click();
+      return;
+    }
+    
+    // Ctrl+Shift+P: Change Password
+    if (isCtrl && isShift && e.key === 'P') {
+      e.preventDefault();
+      document.getElementById('button-savenew')?.click();
+      return;
+    }
+    
+    // Removed delete site shortcut as requested
+    
+    // Ctrl+Shift+G: Toggle Theme
+    if (isCtrl && isShift && (e.key === 'g' || e.key === 'G')) {
+      e.preventDefault();
+      document.getElementById('theme-toggle')?.click();
+      return;
+    }
+    
+    // Ctrl+1-9: Switch to tab by number
+    if (isCtrl && e.key >= '1' && e.key <= '9') {
+      e.preventDefault();
+      const tabIndex = parseInt(e.key) - 1;
+      const tabs = document.querySelectorAll('.tab-header');
+      if (tabs[tabIndex]) {
+        tabs[tabIndex].querySelector('.tab-title')?.click();
+      }
+      return;
+    }
+    
+    // Ctrl+Tab: Next tab
+    if (isCtrl && e.key === 'Tab' && !isShift) {
+      e.preventDefault();
+      const tabs = document.querySelectorAll('.tab-header');
+      const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
+      const nextIndex = (activeIndex + 1) % tabs.length;
+      tabs[nextIndex]?.querySelector('.tab-title')?.click();
+      return;
+    }
+    
+    // Ctrl+Shift+Tab: Previous tab
+    if (isCtrl && e.key === 'Tab' && isShift) {
+      e.preventDefault();
+      const tabs = document.querySelectorAll('.tab-header');
+      const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
+      const prevIndex = activeIndex === 0 ? tabs.length - 1 : activeIndex - 1;
+      tabs[prevIndex]?.querySelector('.tab-title')?.click();
+      return;
+    }
+    
+    // F1: Show keyboard shortcuts help
+    if (e.key === 'F1') {
+      e.preventDefault();
+      showKeyboardShortcutsHelp();
+      return;
+    }
+    
+    // Escape: Close dialogs or focus textarea
+    if (e.key === 'Escape') {
+      const openDialog = document.querySelector('dialog[open]');
+      if (openDialog) {
+        openDialog.close();
+      } else {
+        focusActiveTextarea();
+      }
+      return;
+    }
+  });
+}
+
+function showKeyboardShortcutsHelp() {
+  const shortcuts = [
+    { keys: 'Ctrl+S', desc: 'Save notes' },
+    { keys: 'Ctrl+Alt+T', desc: 'New tab' },
+    { keys: 'Ctrl+R', desc: 'Reload from server' },
+    { keys: 'Ctrl+1-9', desc: 'Switch to tab by number' },
+    { keys: 'Ctrl+Tab', desc: 'Next tab' },
+    { keys: 'Ctrl+Shift+Tab', desc: 'Previous tab' },
+    { keys: 'Ctrl+Shift+P', desc: 'Change password' },
+    { keys: 'Ctrl+Shift+G', desc: 'Toggle theme' },
+    { keys: 'F1', desc: 'Show this help' },
+    { keys: 'Escape', desc: 'Close dialogs or focus editor' }
+  ];
+  
+  const helpText = shortcuts.map(s => `<strong>${s.keys}</strong>: ${s.desc}`).join('<br>');
+  showNotification(`<div style="text-align: left; line-height: 1.6;"><strong>🚀 Keyboard Shortcuts</strong><br><br>${helpText}</div>`, 'info', 8000);
+}
+
+// Function is now handled via event listener instead of onclick
+
 // ---------- Production Error Handling ----------
 function showNotification(message, type = 'info', duration = 5000) {
   const notification = document.createElement('div');
   notification.className = `notification notification-${type}`;
-  notification.textContent = message;
+  notification.innerHTML = message; // Changed to innerHTML to support HTML content
   
   // Add to DOM
   document.body.appendChild(notification);
@@ -466,9 +584,43 @@ class ClientState {
       }
     };
 
+    // First show confirmation dialog
     openConfirmDialog("#dialog-confirm-delete-site", async (ok) => {
-      if (ok) await runDelete();
-      else focusActiveTextarea();
+      if (ok) {
+        // Then require password confirmation
+        openDeletePasswordDialog({
+          onOk: async (enteredPassword) => {
+            // Validate password using the same logic as login
+            if (!this.remote.eContent) {
+              // No encrypted content, check if password matches current password
+              if (enteredPassword === this.password) {
+                await runDelete();
+                return true;
+              }
+              return false;
+            }
+            
+            try {
+              // Format: saltHex:ivHex:cipherHex
+              const parts = this.remote.eContent.split(":");
+              if (parts.length !== 3) return false;
+              const [saltHex, ivHex, cipherHex] = parts;
+              const plain = await aesGcmDecryptHex(ivHex, cipherHex, enteredPassword, saltHex);
+              if (plain.endsWith(this.siteHash)) {
+                // Password is correct, proceed with deletion
+                await runDelete();
+                return true;
+              }
+              return false;
+            } catch (error) {
+              // Wrong password
+              return false;
+            }
+          }
+        });
+      } else {
+        focusActiveTextarea();
+      }
     });
   }
 
@@ -664,6 +816,42 @@ const openPasswordDialog = ({ onOk, obscure = true, hideUI = false }) => {
   };
   dlg.addEventListener("close", cleanup);
 };
+const openDeletePasswordDialog = ({ onOk }) => {
+  const dlg = qs("#dialog-delete-password"), input = qs("#deletepassword");
+  dlg.returnValue = "cancel";
+  input.value = "";
+  dlg.showModal();
+  queueMicrotask(() => input.focus());
+
+  const btnOk = dlg.querySelector("button[value='ok']");
+
+  const handleOk = async (ev) => {
+    ev?.preventDefault?.();
+    btnOk.disabled = true;
+    try {
+      const success = await onOk(input.value);
+      if (success) {
+        dlg.close("ok");
+      } else {
+        toast("Wrong password", "error");
+        input.select();
+        input.focus();
+        return; // keep dialog open
+      }
+    } finally {
+      btnOk.disabled = false;
+    }
+  };
+
+  btnOk.addEventListener("click", handleOk, { once: false });
+
+  const cleanup = () => {
+    btnOk.removeEventListener("click", handleOk);
+    dlg.removeEventListener("close", cleanup);
+  };
+  dlg.addEventListener("close", cleanup);
+};
+
 const openNewPasswordDialog = ({title, onSave}) => {
   const dlg = qs("#dialog-new-password"), titleEl = qs("#dialog-new-password-title"), p1 = qs("#newpassword1"), p2 = qs("#newpassword2");
   titleEl.textContent = title || "Create password";
@@ -695,9 +883,27 @@ const hideHint = sel => qs(sel)?.style.setProperty('display', 'none');
 
 // ---------- Tabs UI ----------
 function initTabsLayout() {
+  // Single click for tab switching only
   on(qs(".tab-headers-container"), "click", (e) => {
     const li = e.target.closest(".tab-header");
     const close = e.target.closest(".close");
+    
+    // For close button: switch to tab but prevent close action
+    if (close && li) {
+      e.preventDefault();
+      e.stopPropagation();
+      activateTab(li); // Switch to the tab first
+      return;
+    }
+    
+    if (li) activateTab(li);
+  });
+  
+  // Double click for close button and color picker
+  on(qs(".tab-headers-container"), "dblclick", (e) => {
+    const li = e.target.closest(".tab-header");
+    const close = e.target.closest(".close");
+    
     if (close && li) {
       const headers = qsa(".tab-header");
       if (headers.length <= 1) return;
@@ -716,7 +922,6 @@ function initTabsLayout() {
       });
       return;
     }
-    if (li) activateTab(li);
   });
 
   on(qs("#add_tab"), "click", () => {
@@ -843,6 +1048,11 @@ function activateTab(headerLi) {
   const id = headerLi.dataset.tabId;
   const panel = qs(`#${id}`);
   panel && panel.classList.add("active");
+  
+  // Dispatch custom event for tab activation
+  document.dispatchEvent(new CustomEvent('tab-activated', {
+    detail: { tab: headerLi }
+  }));
   // After switching, ensure the gutter matches the active textarea
   setTimeout(() => {
     focusActiveTextarea();
@@ -859,18 +1069,41 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   const headersContainer = qs(".tab-headers-container");
   const id = `tab-${tabCounter++}`;
 
+  // Parse content and color metadata
+  let actualContent = contentIfAvailable;
+  let tabColor = null;
+  
+  // Check if content has color metadata
+  if (contentIfAvailable && contentIfAvailable.startsWith("__CRYPTEXA_COLOR__:")) {
+    const colorEndIndex = contentIfAvailable.indexOf("\n");
+    if (colorEndIndex !== -1) {
+      const colorLine = contentIfAvailable.substring(0, colorEndIndex);
+      tabColor = colorLine.replace("__CRYPTEXA_COLOR__:", "").trim();
+      actualContent = contentIfAvailable.substring(colorEndIndex + 1);
+    }
+  }
+
   const li = document.createElement("li");
   li.className = "tab-header";
   li.dataset.tabId = id;
   li.draggable = true;
+  
+  // Store color in dataset
+  if (tabColor) {
+    li.dataset.tabColor = tabColor;
+    li.style.backgroundColor = tabColor;
+  }
+  
   const a = document.createElement("a");
   a.href = `#${id}`;
   a.className = "tab-title";
   a.textContent = "Empty Tab";
+  
   const span = document.createElement("span");
   span.className = "close";
   span.title = "Remove Tab";
   span.textContent = "×";
+  
   li.appendChild(a);
   li.appendChild(span);
   
@@ -898,10 +1131,12 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   };
 
   // Initial content
-  if (contentIfAvailable && contentIfAvailable.length > 0) {
-    ta.value = contentIfAvailable;
-    a.textContent = getTitleFromContent(contentIfAvailable.substring(0, 200));
+  if (actualContent && actualContent.length > 0) {
+    ta.value = actualContent;
+    a.textContent = getTitleFromContent(actualContent.substring(0, 200));
   }
+  
+
 
   // Wire updates
   let rafId = 0;
@@ -944,9 +1179,9 @@ function onWindowResize() {
   const h = window.innerHeight - top;
   outter.style.height = `${h}px`;
   const panels = qsa(".tab-panel");
-  const headerH = headers.getBoundingClientRect().height;
+  const headerH = headers.getBoundingClientRect().height; // variable due to multi-row tabs
   panels.forEach(p => {
-    p.style.height = `${h - headerH}px`;
+    p.style.height = `${Math.max(0, h - headerH)}px`;
   });
   // Keep gutter scroll offset aligned after resizes
   qsa(".tab-panel").forEach(panel => {
@@ -1067,7 +1302,15 @@ async function getContentFromTabs() {
   for (let i = 0; i < headers.length; i++) {
     const id = headers[i].dataset.tabId;
     const ta = qs(`#${id} textarea.textarea-contents`);
+    const tabColor = headers[i].dataset.tabColor;
+    
     if (i > 0) all += sep;
+    
+    // Add color metadata if tab has a color
+    if (tabColor && tabColor !== "#ffffff") {
+      all += `__CRYPTEXA_COLOR__:${tabColor}\n`;
+    }
+    
     all += ta.value;
   }
   const meta = state.getMobileAppMetadataTabContent();
@@ -1255,7 +1498,10 @@ function wireEvents() {
     });
   });
 
-  
+  // Help button
+  on(qs("#help-button"), "click", () => {
+    showKeyboardShortcutsHelp();
+  });
 
   // Keyboard shortcuts
   setupKeyboardShortcuts();
@@ -1465,7 +1711,7 @@ function setupKeyboardShortcuts() {
   }
 
   function initTheme() {
-    const initial = getStored() || 'dark'; // default to dark
+    const initial = getStored() || 'light'; // default to light
     applyTheme(initial);
   }
 
@@ -1491,6 +1737,68 @@ function setupKeyboardShortcuts() {
   document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     wireToggle();
+    initKeyboardShortcuts();
+    
+    // Global color picker functionality
+    const globalColorPicker = document.getElementById('tab-color-picker');
+    if (globalColorPicker) {
+      // Debounce color changes for better performance
+      let colorChangeTimeout;
+      
+      globalColorPicker.addEventListener('input', (e) => {
+        try {
+          const activeTab = document.querySelector('.tab-header.active');
+          if (activeTab) {
+            const newColor = e.target.value;
+            // Immediate visual feedback
+            activeTab.style.backgroundColor = newColor;
+          }
+        } catch (error) {
+          console.error('Error updating tab color preview:', error);
+        }
+      });
+      
+      globalColorPicker.addEventListener('change', (e) => {
+        try {
+          const activeTab = document.querySelector('.tab-header.active');
+          if (activeTab) {
+            const newColor = e.target.value;
+            // Validate color format
+            if (!/^#[0-9A-F]{6}$/i.test(newColor)) {
+              console.warn('Invalid color format:', newColor);
+              return;
+            }
+            
+            activeTab.dataset.tabColor = newColor;
+            activeTab.style.backgroundColor = newColor;
+            
+            // Debounce the save operation
+            clearTimeout(colorChangeTimeout);
+            colorChangeTimeout = setTimeout(() => {
+              state.updateIsTextModified(true);
+              refreshTabs();
+            }, 300);
+          }
+        } catch (error) {
+          console.error('Error updating tab color:', error);
+        }
+      });
+      
+      // Update color picker when tab changes
+      document.addEventListener('tab-activated', (e) => {
+        try {
+          const activeTab = e.detail?.tab;
+          if (activeTab && activeTab.dataset.tabColor) {
+            globalColorPicker.value = activeTab.dataset.tabColor;
+          } else {
+            globalColorPicker.value = '#ffffff';
+          }
+        } catch (error) {
+          console.error('Error updating color picker on tab change:', error);
+          globalColorPicker.value = '#ffffff'; // Fallback
+        }
+      });
+    }
     
     // Start health monitoring in production
     if (window.location.protocol === 'https:' || window.location.hostname !== 'localhost') {

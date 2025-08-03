@@ -4,13 +4,16 @@
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Cryptexa - Your secure digital diary where thoughts go to hide from the world" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Cryptexa</title>
   <script>
-  // Early theme application to avoid flash; default to dark, honor stored pref
+  // Early theme application to avoid flash; default to light, honor stored pref
   (function(){
     try{
       var pref = localStorage.getItem('theme-preference');
-      var theme = pref || 'dark';
+      var theme = pref || 'light';
       var c = document.documentElement.classList;
       c.remove('theme-dark','theme-light');
       c.add(theme === 'light' ? 'theme-light' : 'theme-dark');
@@ -19,37 +22,119 @@
   </script>
   <link rel="stylesheet" href="./styles.css" />
   <style>
-    /* minimal inline styles for landing section reusing CSS vars */
+    /* Modern, sleek landing page styles */
     .landing {
       display: none;
-      max-width: 720px;
-      margin: 60px auto;
+      max-width: 480px;
+      margin: 80px auto;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 10px 30px var(--shadow);
+      border-radius: 20px;
+      padding: 48px 40px;
+      box-shadow: 0 20px 60px var(--shadow);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
     }
-    .landing h1 { margin: 0 0 8px 0; color: var(--brand); }
-    .landing p { color: var(--muted); margin: 6px 0 14px 0; }
-    .landing .row { display: flex; gap: 8px; }
-    .landing input[type="text"], .landing input[type="password"] {
+    .landing::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--gradient-brand);
+      border-radius: 20px 20px 0 0;
+    }
+    .landing .emoji {
+      font-size: 48px;
+      margin-bottom: 16px;
+      display: block;
+      animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-8px); }
+    }
+    .landing h1 {
+      margin: 0 0 12px 0;
+      color: var(--text);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .landing .subtitle {
+      color: var(--brand);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      opacity: 0.9;
+    }
+    .landing p {
+      color: var(--muted);
+      margin: 0 0 32px 0;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .landing .input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      align-items: stretch;
+    }
+    .landing input[type="text"] {
       flex: 1;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      padding: 16px 20px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
       background: var(--panel-2);
       color: var(--text);
+      font-size: 16px;
+      transition: all 0.3s ease;
+      outline: none;
+    }
+    .landing input[type="text"]:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.1);
+      transform: translateY(-1px);
+    }
+    .landing input[type="text"]::placeholder {
+      color: var(--muted);
+      opacity: 0.7;
     }
     .landing button {
-      padding: 10px 14px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, #1c2942, #19243a);
-      color: var(--text);
+      padding: 16px 24px;
+      border-radius: 12px;
+      border: none;
+      background: var(--gradient-brand);
+      color: white;
       cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(122, 162, 255, 0.3);
     }
-    .landing .muted { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .landing button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(122, 162, 255, 0.4);
+    }
+    .landing button:active {
+      transform: translateY(0);
+    }
+    .landing .footer-text {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 24px;
+      opacity: 0.8;
+      line-height: 1.5;
+    }
+    .landing .footer-text code {
+      background: var(--panel-2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
     /* Theme toggle minimal styling to integrate into menubar */
     .theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;box-shadow:var(--shadow-sm)}
     .theme-toggle .icon{width:18px;height:18px;display:inline-block;line-height:1}
@@ -63,6 +148,10 @@
       <button id="button-savenew" title="Change Password">Change Password</button>
       <button id="button-reload" title="Reload">Reload</button>
       <button id="button-delete" title="Delete All">Delete</button>
+      <!-- Tab Color Picker -->
+      <input type="color" id="tab-color-picker" value="#ffffff" title="Set active tab color">
+      <!-- Help Button -->
+      <button id="help-button" title="Keyboard Shortcuts (F1)" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;">❓</button>
       <!-- Theme Toggle -->
       <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle color theme" aria-live="polite" aria-pressed="true">
         <span class="icon" aria-hidden="true">🌙</span>
@@ -78,13 +167,18 @@
 
   <!-- Landing page -->
   <section id="landing" class="landing">
-    <h1>Secure Notes</h1>
-    <p>Enter a unique site name to create or access your encrypted notes. Optionally add a password in the URL.</p>
-    <div class="row" style="margin-bottom:8px;">
-      <input type="text" id="landing-site" placeholder="e.g. my-notes" />
-      <button id="landing-open">Open</button>
+    <span class="emoji">🔐</span>
+    <h1>Your Secret Vault</h1>
+    <p class="subtitle">Where your thoughts go to hide from the world</p>
+    <p>Pick a unique name for your digital diary. Make it memorable, make it yours, make it impossible for your cat to guess.</p>
+    <div class="input-group">
+      <input type="text" id="landing-site" placeholder="my-secret-thoughts" />
+      <button id="landing-open">Let's Go! 🚀</button>
     </div>
-    <p class="muted">This app keeps all encryption in your browser. The server only stores encrypted text. Opening will navigate to <code>?site=<name></code>. You can also use <code>?site=<name>&password=<pass></code> to auto-decrypt.</p>
+    <div class="footer-text">
+      <strong>Fort Knox level security:</strong> Everything stays encrypted in your browser. We're so secure, even we can't read your notes! 🤫<br>
+      <small>Pro tip: Add <code>?password=yourpass</code> to the URL for instant access (but maybe don't use 'password123')</small>
+    </div>
   </section>
 
   <div id="main-content-outter">
@@ -169,6 +263,18 @@
       <menu>
         <button value="cancel" class="secondary">Cancel</button>
         <button value="ok" class="danger">Delete</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-delete-password" class="app-dialog">
+    <form method="dialog">
+      <h3>Confirm deletion</h3>
+      <p class="additional-text">Enter your password to confirm site deletion.</p>
+      <input type="password" id="deletepassword" placeholder="Password" autocomplete="current-password" />
+      <menu>
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger" style="min-width:120px">Delete</button>
       </menu>
     </form>
   </dialog>
@@ -266,10 +372,12 @@
       const site = getSiteFromURL();
       const landing = document.getElementById("landing");
       const main = document.getElementById("main-content-outter");
+      const menubar = document.getElementById("menubar");
       const menubarBtns = document.getElementById("menubar-buttons");
       if(!site){
         landing.style.display = "block";
         main.style.display = "none";
+        menubar.style.display = "none";
         // Disable editor buttons on landing
         Array.from(menubarBtns.querySelectorAll("button")).forEach(b=>b.disabled=true);
         const input = document.getElementById("landing-site");
@@ -290,6 +398,7 @@
       } else {
         landing.style.display = "none";
         main.style.display = "block";
+        menubar.style.display = "flex";
       }
     })();
   </script>
