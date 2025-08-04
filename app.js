@@ -1055,26 +1055,44 @@ function updateGutterForTextarea(ta, gutter) {
 }
 
 function activateTab(headerLi) {
-  qsa(".tab-header").forEach(h => h.classList.remove("active"));
-  qsa(".tab-panel").forEach(p => p.classList.remove("active"));
-  headerLi.classList.add("active");
+  // Batch DOM mutations to avoid repeated style/layout passes
+  const headers = qsa(".tab-header");
+  const panels = qsa(".tab-panel");
   const id = headerLi.dataset.tabId;
   const panel = qs(`#${id}`);
-  panel && panel.classList.add("active");
-  
-  // Dispatch custom event for tab activation
-  document.dispatchEvent(new CustomEvent('tab-activated', {
-    detail: { tab: headerLi }
-  }));
-  // After switching, ensure the gutter matches the active textarea
-  setTimeout(() => {
-    focusActiveTextarea();
-    const ta = panel && panel.querySelector("textarea.textarea-contents");
-    const gutter = panel && panel.querySelector(".line-gutter");
-    if (ta && gutter) {
-      updateGutterForTextarea(ta, gutter);
-    }
-  }, 1);
+
+  // Use a document fragment-like batching via requestAnimationFrame
+  requestAnimationFrame(() => {
+    headers.forEach(h => h.classList.remove("active"));
+    panels.forEach(p => p.classList.remove("active"));
+    headerLi.classList.add("active");
+    if (panel) panel.classList.add("active");
+
+    // Defer heavy work to idle time to keep tab switch snappy
+    setTimeout(() => {
+      focusActiveTextarea();
+      const ta = panel && panel.querySelector("textarea.textarea-contents");
+      const gutter = panel && panel.querySelector(".line-gutter");
+      if (ta && gutter) {
+        // For very large notes, avoid regenerating entire gutter if not needed
+        // Only sync scroll transform first; regenerate numbers lazily
+        const y = Math.round(ta.scrollTop || 0);
+        gutter.style.setProperty("--gutter-scroll-y", String(-y));
+        gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
+        gutter.style.removeProperty("top");
+        gutter.style.transform = "translateZ(0)";
+
+        // Lazy line number update for big docs
+        const needsHeavyUpdate = (ta.value && ta.value.length > 50000);
+        if (needsHeavyUpdate) {
+          // Generate numbers off main turn to avoid blocking the click
+          setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
+        } else {
+          updateGutterForTextarea(ta, gutter);
+        }
+      }
+    }, 0);
+  });
 }
 
 let tabCounter = 1;
@@ -1146,7 +1164,11 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   // Initial content
   if (actualContent && actualContent.length > 0) {
     ta.value = actualContent;
+    // Compute initial title from the first 200 chars only (fast even for large notes)
     a.textContent = getTitleFromContent(actualContent.substring(0, 200));
+  } else {
+    // Ensure title reflects actual content if empty/whitespace
+    a.textContent = getTitleFromContent("");
   }
   
 
@@ -1163,7 +1185,16 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   });
 
   // Sync gutter vertical offset with textarea scroll using CSS transform
+  // Throttle scroll events for large notes to reduce main-thread work
+  let lastScrollTs = 0;
   ta.addEventListener("scroll", () => {
+    const now = performance.now ? performance.now() : Date.now();
+    const isHuge = (ta.value && ta.value.length > 50000);
+    if (isHuge && now - lastScrollTs < 16) {
+      // ~60fps throttle
+      return;
+    }
+    lastScrollTs = now;
     const y = Math.round(ta.scrollTop || 0);
     gutter.style.setProperty("--gutter-scroll-y", String(-y));
     gutter.style.removeProperty("top");
@@ -1172,7 +1203,13 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   });
 
   // Ensure initial render
-  requestAnimationFrame(updateGutter);
+  // For huge notes, defer full line number generation slightly
+  const isHuge = (ta.value && ta.value.length > 50000);
+  if (isHuge) {
+    setTimeout(updateGutter, 0);
+  } else {
+    requestAnimationFrame(updateGutter);
+  }
 
   refreshTabs();
   onWindowResize();
@@ -1238,6 +1275,16 @@ async function finishInitialization(shouldSkipSettingContent) {
     setContentOfTabs(state.getContent());
   }
   setTimeout(() => { ignoreInputEvent = false; }, 50);
+
+  // Hint: mark huge tabs to avoid costly styles or scripts if needed
+  try {
+    const panel = qs(".tab-panel.active");
+    const ta = panel && panel.querySelector("textarea.textarea-contents");
+    if (ta) {
+      const isHuge = (ta.value && ta.value.length > 50000);
+      panel.dataset.huge = isHuge ? "1" : "";
+    }
+  } catch {}
 }
 
 function decryptContentAndFinishInitialization(isOld) {
@@ -1335,20 +1382,28 @@ async function getContentFromTabs() {
 
 // Compute tab title from textarea content
 function getTitleFromContent(content) {
+  // Only look at the first 200 characters max to avoid heavy scans on huge notes
   if (content === undefined && currentTextarea) {
     content = currentTextarea.value.substring(0, 200);
+  } else {
+    content = (content || "").substring(0, 200);
   }
   if (!content) return "Empty Tab";
-  let i, pos, title;
-  for (i = 0; i < content.length; i++) {
-    const ch = content[i];
-    if (!(ch === " " || ch === "\n" || ch === "\t" || ch === "\r" || ch === "\v" || ch === "\f")) {
-      pos = content.indexOf("\n", i + 1);
-      if (pos === -1) pos = Math.min(200, content.length);
-      title = content.substr(i, pos - i);
-      break;
-    }
+
+  // Skip leading whitespace quickly
+  let start = 0;
+  while (start < content.length) {
+    const ch = content[start];
+    if (ch !== " " && ch !== "\n" && ch !== "\t" && ch !== "\r" && ch !== "\v" && ch !== "\f") break;
+    start++;
   }
+  if (start >= content.length) return "Empty Tab";
+
+  // Find end of first line within the capped window
+  const nlRel = content.indexOf("\n", start);
+  const end = nlRel === -1 ? content.length : nlRel;
+  let title = content.substring(start, end);
+
   if (!title || title.length === 0) return "Empty Tab";
   if (title.length > 20) title = title.substr(0, 18) + "...";
   return title;
@@ -1429,16 +1484,36 @@ function wireEvents() {
     if (pendingRaf) cancelAnimationFrame(pendingRaf);
     pendingRaf = requestAnimationFrame(() => {
       pendingRaf = 0;
+
+      // Title update guard: only compute when caret near start and content not too large
       try {
         const start = ta.selectionStart;
-        if (start <= 201 && currentTabTitle) {
+        const isHuge = (ta.value && ta.value.length > 50000);
+        if (!isHuge && start <= 201 && currentTabTitle) {
           currentTabTitle.textContent = getTitleFromContent(ta.value.substring(0, 200));
         }
       } catch {}
+
+      // Gutter update throttling for large notes: avoid per-keystroke full regen
       const panel = ta.closest(".tab-panel");
       const gutter = panel && panel.querySelector(".line-gutter");
       if (gutter) {
-        updateGutterForTextarea(ta, gutter);
+        const isHuge = (ta.value && ta.value.length > 50000);
+        if (isHuge) {
+          // Only adjust scroll transform now; regenerate line numbers debounced
+          const y = Math.round(ta.scrollTop || 0);
+          gutter.style.setProperty("--gutter-scroll-y", String(-y));
+          gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
+          gutter.style.removeProperty("top");
+          gutter.style.transform = "translateZ(0)";
+
+          if (!gutter._lnDebounce) {
+            gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
+          }
+          gutter._lnDebounce();
+        } else {
+          updateGutterForTextarea(ta, gutter);
+        }
       }
     });
   });
@@ -1446,12 +1521,23 @@ function wireEvents() {
     if (!(e.target instanceof HTMLTextAreaElement)) return;
     if (!e.target.classList.contains("textarea-contents")) return;
     setTimeout(() => {
-      currentTabTitle && (currentTabTitle.textContent = getTitleFromContent());
+      const ta = e.target;
+      const isHuge = (ta.value && ta.value.length > 50000);
+      if (!isHuge && currentTabTitle) {
+        currentTabTitle.textContent = getTitleFromContent();
+      }
       // Deferred gutter update after paste
-      const panel = e.target.closest(".tab-panel");
+      const panel = ta.closest(".tab-panel");
       const gutter = panel && panel.querySelector(".line-gutter");
       if (gutter) {
-        updateGutterForTextarea(e.target, gutter);
+        if (isHuge) {
+          if (!gutter._lnDebounce) {
+            gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
+          }
+          gutter._lnDebounce();
+        } else {
+          updateGutterForTextarea(ta, gutter);
+        }
       }
     }, 50);
   });

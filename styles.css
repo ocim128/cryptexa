@@ -13,7 +13,8 @@
   --border:#263048;
   --shadow:rgba(0,0,0,.5);
   --tab:#2a3248;
-  --tab-active:#3a4461;
+  --tab-active:#4a5470;
+  --tab-active-border:#ff4757;
   --radius:8px;
   --radius-sm:4px;
   --transition:all .2s cubic-bezier(.4,0,.2,1);
@@ -41,7 +42,8 @@
   --border:#d6e0ea;
   --shadow:rgba(16,24,40,.12);
   --tab:#e8eef7;
-  --tab-active:#dbe7f7;
+  --tab-active:#ffffff;
+  --tab-active-border:#dc2626;
   --gradient-brand:linear-gradient(135deg,var(--brand),#54a3ff);
   --backdrop:rgba(16,18,24,.4);
 }
@@ -141,7 +143,8 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
   box-shadow:0 2px 4px rgba(0,0,0,0.05)
 }
 .tab-header:hover{background:var(--tab-active);transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.15);border-color:var(--brand)}
-.tab-header.active{background:var(--tab-active);box-shadow:0 8px 0 0 var(--tab-active),0 -4px 12px rgba(0,0,0,0.2);transform:translateY(-2px);z-index:3;border:2px solid var(--brand);border-bottom:2px solid var(--brand)}
+.tab-header.active:hover{border-color:var(--tab-active-border)}
+.tab-header.active{background:var(--tab-active);box-shadow:0 8px 0 0 var(--tab-active),0 -4px 12px rgba(0,0,0,0.2);transform:translateY(-2px);z-index:3;border:2px solid var(--tab-active-border);border-bottom:2px solid var(--tab-active-border);font-weight:700}
 .tab-title{
   overflow:hidden;
   text-overflow:ellipsis;
@@ -163,9 +166,13 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
   border-color: rgba(0,0,0,0.2);
 }
 
+.tab-header[data-tab-color].active {
+  border-color: var(--tab-active-border);
+  border-bottom: 2px solid var(--tab-active-border);
+}
+
 .tab-header[data-tab-color] .tab-title {
   color: rgba(0,0,0,0.8);
-  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
 }
 
 .tab-header[data-tab-color].active .tab-title {
@@ -236,8 +243,9 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
   border-radius:var(--radius);
   box-shadow:inset 0 1px 3px rgba(0,0,0,.08);
   overflow:hidden; /* ensure pseudo element can render beyond without layout spill */
-  contain: layout paint; /* improve perf during scroll transforms */
+  contain: content; /* stronger containment to isolate heavy textareas */
   margin:4px;
+  will-change: transform;
 }
 
 /* Typography and rhythm sync for editor and gutter */
@@ -269,6 +277,7 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
   user-select:none;
   overflow:visible; /* allow full number text to render */
   position:relative;
+  contain: content; /* isolate heavy number painting */
   will-change: transform;
 }
 
@@ -302,6 +311,8 @@ html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
   transition:var(--transition);
   border-radius:0 0 var(--radius) var(--radius);
   overflow: auto; /* ensure scrollbars appear as needed */
+  contain: content; /* prevent large text layout from bubbling up on tab switch */
+  will-change: contents;
 }
 .textarea-contents:focus{background:var(--panel-2);box-shadow:inset 0 1px 3px rgba(0,0,0,.12),0 0 0 2px var(--brand)}
 .textarea-contents::placeholder{color:var(--muted);opacity:.7;font-style:italic}
