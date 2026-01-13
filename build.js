@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+
 
 // Configuration
 const BUILD_DIR = 'dist';
@@ -47,12 +47,12 @@ if (fs.existsSync('styles.css')) {
   let css = fs.readFileSync('styles.css', 'utf8');
   // Remove comments and extra whitespace
   css = css.replace(/\/\*[\s\S]*?\*\//g, '')
-           .replace(/\s+/g, ' ')
-           .replace(/;\s*}/g, '}')
-           .replace(/\s*{\s*/g, '{')
-           .replace(/;\s*/g, ';')
-           .trim();
-  
+    .replace(/\s+/g, ' ')
+    .replace(/;\s*}/g, '}')
+    .replace(/\s*{\s*/g, '{')
+    .replace(/;\s*/g, ';')
+    .trim();
+
   fs.writeFileSync(path.join(BUILD_DIR, 'styles.css'), css);
   console.log('✅ Minified CSS');
 }
@@ -60,14 +60,14 @@ if (fs.existsSync('styles.css')) {
 // Create production package.json
 if (fs.existsSync('package.json')) {
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  
+
   // Remove dev dependencies and scripts not needed in production
   delete pkg.devDependencies;
   pkg.scripts = {
     start: pkg.scripts.start,
     prod: pkg.scripts.prod
   };
-  
+
   fs.writeFileSync(
     path.join(BUILD_DIR, 'package.json'),
     JSON.stringify(pkg, null, 2)

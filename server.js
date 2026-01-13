@@ -102,13 +102,13 @@ async function connectMongoDB() {
   if (!MONGODB_URI) {
     throw new Error('MONGODB_URI environment variable is required for MongoDB mode');
   }
-  
+
   try {
     mongoClient = new MongoClient(MONGODB_URI);
     await mongoClient.connect();
     mongoDb = mongoClient.db('cryptexa');
     console.log('✅ Connected to MongoDB');
-    
+
     // Create index for better performance
     await mongoDb.collection('sites').createIndex({ site: 1 }, { unique: true });
   } catch (error) {
@@ -166,12 +166,12 @@ class Database {
 
 const database = new Database();
 
-app.use(express.json({ 
+app.use(express.json({
   limit: MAX_CONTENT_SIZE,
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
-    } catch (e) {
+    } catch {
       const error = new Error('Invalid JSON');
       error.status = 400;
       throw error;
@@ -198,6 +198,9 @@ app.use(express.static(__dirname, {
   lastModified: true
 }));
 
+// Health check - must be before /:site catch-all
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
 // Support pretty site URLs: /:site should serve index.html (SPA) while preserving API routes
 app.get("/:site", (req, res, next) => {
   // Skip if path collides with known static files or API
@@ -206,9 +209,6 @@ app.get("/:site", (req, res, next) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Health
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
 // Get site blob in ProtectedText-like JSON shape
 app.get("/api/json", async (req, res) => {
   try {
@@ -216,7 +216,7 @@ app.get("/api/json", async (req, res) => {
     if (!site) {
       return res.status(400).json({ status: "error", message: "Missing site" });
     }
-    
+
     const entry = await database.getSite(site);
     if (!entry) {
       return res.json({
@@ -228,7 +228,7 @@ app.get("/api/json", async (req, res) => {
         currentHashContent: null
       });
     }
-    
+
     return res.json({
       status: "success",
       isNew: false,
@@ -250,7 +250,7 @@ app.post("/api/save", async (req, res) => {
     if (!site || typeof initHashContent !== "string" || typeof currentHashContent !== "string" || typeof encryptedContent !== "string") {
       return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
-    
+
     const siteKey = String(site).trim();
     const existing = await database.getSite(siteKey);
 
@@ -268,7 +268,7 @@ app.post("/api/save", async (req, res) => {
       currentHashContent, // becomes the new baseline to be returned to clients
       updatedAt: Date.now()
     };
-    
+
     await database.saveSite(siteKey, siteData);
     return res.json({ status: "success", currentHashContent });
   } catch (error) {
@@ -284,7 +284,7 @@ app.post("/api/delete", async (req, res) => {
     if (!site || typeof initHashContent !== "string") {
       return res.status(400).json({ status: "error", message: "Missing required fields" });
     }
-    
+
     const siteKey = String(site).trim();
     const existing = await database.getSite(siteKey);
 
@@ -292,7 +292,7 @@ app.post("/api/delete", async (req, res) => {
       // Consider already deleted
       return res.json({ status: "success" });
     }
-    
+
     if ((existing.currentHashContent || "") !== initHashContent) {
       return res.json({
         status: "error",
@@ -315,12 +315,12 @@ app.use((err, req, res, next) => {
   } else {
     console.error('Error:', err);
   }
-  
+
   const status = err.status || 500;
-  const message = NODE_ENV === 'production' && status === 500 
-    ? 'Internal server error' 
+  const message = NODE_ENV === 'production' && status === 500
+    ? 'Internal server error'
     : err.message;
-    
+
   res.status(status).json({ status: 'error', message });
 });
 
@@ -332,7 +332,7 @@ app.use((req, res) => {
 // Graceful shutdown
 async function gracefulShutdown(signal) {
   console.log(`${signal} received, shutting down gracefully`);
-  
+
   if (mongoClient) {
     try {
       await mongoClient.close();
@@ -341,7 +341,7 @@ async function gracefulShutdown(signal) {
       console.error('❌ Error closing MongoDB connection:', error);
     }
   }
-  
+
   process.exit(0);
 }
 
@@ -355,18 +355,18 @@ async function startServer() {
     if (DB_TYPE === 'mongodb') {
       await connectMongoDB();
     }
-    
+
     app.listen(PORT, () => {
       console.log(`🚀 Cryptexa server running on port ${PORT}`);
       console.log(`📝 Environment: ${NODE_ENV}`);
       console.log(`💾 Database type: ${DB_TYPE}`);
-      
+
       if (DB_TYPE === 'mongodb') {
         console.log(`🍃 MongoDB: Connected`);
       } else {
         console.log(`📁 Database file: ${DB_FILE}`);
       }
-      
+
       if (NODE_ENV === 'development') {
         console.log(`🌐 Local access: http://localhost:${PORT}`);
       }

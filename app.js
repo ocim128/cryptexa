@@ -34,7 +34,7 @@ function getSiteFromURL() {
 }
 const SITE_ID = getSiteFromURL();
 // Accept either ?password=... or raw ?YourPass (whole querystring as password)
-const URL_PASSWORD = (function() {
+const URL_PASSWORD = (function () {
   const named = getQueryParam("password");
   if (named) return named;
   const qs = window.location.search || "";
@@ -49,48 +49,48 @@ function initKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
     // Skip if user is typing in input fields
     if (e.target.tagName === 'INPUT' && e.target.type !== 'color') return;
-    
+
     const isCtrl = e.ctrlKey || e.metaKey;
     const isShift = e.shiftKey;
     const isAlt = e.altKey;
-    
+
     // Ctrl+S: Save
     if (isCtrl && e.key === 's') {
       e.preventDefault();
       document.getElementById('button-save')?.click();
       return;
     }
-    
+
     // Ctrl+Alt+T: New Tab
     if (isCtrl && isAlt && (e.key === 't' || e.key === 'T')) {
       e.preventDefault();
       document.getElementById('add_tab')?.click();
       return;
     }
-    
+
     // Ctrl+R: Reload
     if (isCtrl && e.key === 'r') {
       e.preventDefault();
       document.getElementById('button-reload')?.click();
       return;
     }
-    
+
     // Ctrl+Shift+P: Change Password
     if (isCtrl && isShift && e.key === 'P') {
       e.preventDefault();
       document.getElementById('button-savenew')?.click();
       return;
     }
-    
+
     // Removed delete site shortcut as requested
-    
+
     // Ctrl+Shift+G: Toggle Theme
     if (isCtrl && isShift && (e.key === 'g' || e.key === 'G')) {
       e.preventDefault();
       document.getElementById('theme-toggle')?.click();
       return;
     }
-    
+
     // Ctrl+1-9: Switch to tab by number
     if (isCtrl && e.key >= '1' && e.key <= '9') {
       e.preventDefault();
@@ -101,7 +101,7 @@ function initKeyboardShortcuts() {
       }
       return;
     }
-    
+
     // Ctrl+Tab: Next tab
     if (isCtrl && e.key === 'Tab' && !isShift) {
       e.preventDefault();
@@ -111,7 +111,7 @@ function initKeyboardShortcuts() {
       tabs[nextIndex]?.querySelector('.tab-title')?.click();
       return;
     }
-    
+
     // Ctrl+Shift+Tab: Previous tab
     if (isCtrl && e.key === 'Tab' && isShift) {
       e.preventDefault();
@@ -121,14 +121,14 @@ function initKeyboardShortcuts() {
       tabs[prevIndex]?.querySelector('.tab-title')?.click();
       return;
     }
-    
+
     // F1: Show keyboard shortcuts help
     if (e.key === 'F1') {
       e.preventDefault();
       showKeyboardShortcutsHelp();
       return;
     }
-    
+
     // Escape: Close dialogs or focus textarea
     if (e.key === 'Escape') {
       const openDialog = document.querySelector('dialog[open]');
@@ -155,7 +155,7 @@ function showKeyboardShortcutsHelp() {
     { keys: 'F1', desc: 'Show this help' },
     { keys: 'Escape', desc: 'Close dialogs or focus editor' }
   ];
-  
+
   const helpText = shortcuts.map(s => `<strong>${s.keys}</strong>: ${s.desc}`).join('<br>');
   showNotification(`<div style="text-align: left; line-height: 1.6;"><strong>🚀 Keyboard Shortcuts</strong><br><br>${helpText}</div>`, 'info', 8000);
 }
@@ -167,13 +167,13 @@ function showNotification(message, type = 'info', duration = 5000) {
   const notification = document.createElement('div');
   notification.className = `notification notification-${type}`;
   notification.innerHTML = message; // Changed to innerHTML to support HTML content
-  
+
   // Add to DOM
   document.body.appendChild(notification);
-  
+
   // Trigger animation
   setTimeout(() => notification.classList.add('show'), 10);
-  
+
   // Auto remove
   setTimeout(() => {
     notification.classList.remove('show');
@@ -230,6 +230,7 @@ function startHealthMonitoring() {
 }
 
 // Stop health monitoring
+// eslint-disable-next-line no-unused-vars
 function stopHealthMonitoring() {
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
@@ -245,34 +246,34 @@ function stopHealthMonitoring() {
 // Retry fetch with exponential backoff
 async function fetchWithRetry(url, options = {}, maxRetries = 3) {
   let lastError;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
-      
+
       const response = await fetch(url, {
         ...options,
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
       return response;
-      
+
     } catch (error) {
       lastError = error;
-      
+
       // Don't retry on abort or non-network errors
       if (error.name === 'AbortError' || attempt === maxRetries) {
         throw error;
       }
-      
+
       // Exponential backoff: 1s, 2s, 4s
       const delay = Math.pow(2, attempt) * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
   throw lastError;
 }
 
@@ -460,8 +461,8 @@ class ClientState {
   async saveSite(newPass) {
     const executeSaveSite = async (passwordToUse) => {
       this.content = await getContentFromTabs();
-      
-      
+
+
       const newHashContent = this.computeHashContentForDBVersion(this.content, passwordToUse, this.expectedDBVersion);
 
       // Create new salt every save for portability; embed in ciphertext
@@ -481,11 +482,11 @@ class ClientState {
             encryptedContent: eContentPayload
           })
         });
-        
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
-        
+
         const data = await res.json();
         if (data.status === "success") {
           toast("Saved!", "success", 1500);
@@ -514,7 +515,7 @@ class ClientState {
       } catch (error) {
         console.error('Save operation failed:', error);
         let errorMessage = "Save failed!";
-        
+
         if (error.name === 'AbortError') {
           errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
         } else if (error.message.includes('HTTP')) {
@@ -522,7 +523,7 @@ class ClientState {
         } else {
           errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
         }
-        
+
         toast(errorMessage, "error", 2500);
         focusActiveTextarea();
       } finally {
@@ -563,11 +564,11 @@ class ClientState {
             initHashContent: this.initHashContent || ""
           })
         });
-        
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
-        
+
         const data = await res.json();
         if (data.status === "success") {
           toast("Site was deleted!", "success", 2000);
@@ -585,7 +586,7 @@ class ClientState {
       } catch (error) {
         console.error('Delete operation failed:', error);
         let errorMessage = "Deleting failed!";
-        
+
         if (error.name === 'AbortError') {
           errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
         } else if (error.message.includes('HTTP')) {
@@ -593,7 +594,7 @@ class ClientState {
         } else {
           errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
         }
-        
+
         toast(errorMessage, "error", 2500);
         focusActiveTextarea();
       } finally {
@@ -616,7 +617,7 @@ class ClientState {
               }
               return false;
             }
-            
+
             const isCorrect = (await this._getDecryptedContent(enteredPassword)) !== null;
             if (isCorrect) {
               await runDelete();
@@ -782,7 +783,7 @@ function toast(message, type = 'info', duration = 4000) {
   }
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  const icons = {success: '✓', error: '✕', warning: '⚠', info: 'ℹ'};
+  const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
   toast.innerHTML = `<div class="toast-content"><span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${message}</span><button class="toast-close" onclick="this.parentElement.parentElement.remove()">&times;</button></div>`;
   container.appendChild(toast);
   setTimeout(() => toast.parentElement && toast.remove(), duration);
@@ -862,7 +863,7 @@ const openDeletePasswordDialog = ({ onOk }) => {
   dlg.addEventListener("close", cleanup);
 };
 
-const openNewPasswordDialog = ({title, onSave}) => {
+const openNewPasswordDialog = ({ title, onSave }) => {
   const dlg = qs("#dialog-new-password"), titleEl = qs("#dialog-new-password-title"), p1 = qs("#newpassword1"), p2 = qs("#newpassword2");
   titleEl.textContent = title || "Create password";
   hideHint("#passwords-empty");
@@ -897,7 +898,7 @@ function initTabsLayout() {
   on(qs(".tab-headers-container"), "click", (e) => {
     const li = e.target.closest(".tab-header");
     const close = e.target.closest(".close");
-    
+
     // For close button: switch to tab but prevent close action
     if (close && li) {
       e.preventDefault();
@@ -905,15 +906,15 @@ function initTabsLayout() {
       activateTab(li); // Switch to the tab first
       return;
     }
-    
+
     if (li) activateTab(li);
   });
-  
+
   // Double click for close button and color picker
   on(qs(".tab-headers-container"), "dblclick", (e) => {
     const li = e.target.closest(".tab-header");
     const close = e.target.closest(".close");
-    
+
     if (close && li) {
       const headers = qsa(".tab-header");
       if (headers.length <= 1) return;
@@ -957,24 +958,24 @@ function refreshTabs() {
 function initTabDragAndDrop() {
   let draggedTab = null;
   let draggedPanel = null;
-  
+
   const container = qs(".tab-headers-container");
-  
+
   container.addEventListener("dragstart", (e) => {
     const tabHeader = e.target.closest(".tab-header");
     if (!tabHeader) return;
-    
+
     draggedTab = tabHeader;
     draggedPanel = qs(`#${tabHeader.dataset.tabId}`);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/html", tabHeader.outerHTML);
-    
+
     // Add visual feedback
     setTimeout(() => {
       tabHeader.style.opacity = "0.5";
     }, 0);
   });
-  
+
   container.addEventListener("dragend", (e) => {
     const tabHeader = e.target.closest(".tab-header");
     if (tabHeader) {
@@ -983,30 +984,30 @@ function initTabDragAndDrop() {
     draggedTab = null;
     draggedPanel = null;
   });
-  
+
   container.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    
+
     const afterElement = getDragAfterElement(container, e.clientX);
     const dragging = qs(".tab-header[style*='opacity']");
-    
+
     if (afterElement == null) {
       container.appendChild(dragging);
     } else {
       container.insertBefore(dragging, afterElement);
     }
   });
-  
+
   container.addEventListener("drop", (e) => {
     e.preventDefault();
-    
+
     if (!draggedTab || !draggedPanel) return;
-    
+
     // Reorder the corresponding panel
     const tabsContainer = qs("#tabs");
     const afterElement = getDragAfterElement(container, e.clientX);
-    
+
     if (afterElement == null) {
       tabsContainer.appendChild(draggedPanel);
     } else {
@@ -1016,18 +1017,18 @@ function initTabDragAndDrop() {
         tabsContainer.insertBefore(draggedPanel, afterPanel);
       }
     }
-    
+
     state.updateIsTextModified(true);
   });
 }
 
 function getDragAfterElement(container, x) {
   const draggableElements = [...container.querySelectorAll(".tab-header:not([style*='opacity'])")];
-  
+
   return draggableElements.reduce((closest, child) => {
     const box = child.getBoundingClientRect();
     const offset = x - box.left - box.width / 2;
-    
+
     if (offset < 0 && offset > closest.offset) {
       return { offset: offset, element: child };
     } else {
@@ -1058,16 +1059,7 @@ function getLineNumberFromPosition(text, position) {
   return textUpToPosition.split('\n').length;
 }
 
-// Get line start and end positions
-function getLinePositions(text, lineNumber) {
-  const lines = text.split('\n');
-  let start = 0;
-  for (let i = 0; i < lineNumber - 1; i++) {
-    start += lines[i].length + 1; // +1 for newline character
-  }
-  const end = start + lines[lineNumber - 1].length;
-  return { start, end };
-}
+
 
 // Get line height from textarea
 function getLineHeight(ta) {
@@ -1080,26 +1072,26 @@ function updateActiveLineHighlight(ta, editorWrap) {
   // Remove existing active line highlights
   const existingHighlights = editorWrap.querySelectorAll('.active-line');
   existingHighlights.forEach(el => el.remove());
-  
+
   // Get cursor position
   const cursorPos = ta.selectionStart;
   const text = ta.value;
-  
+
   // Get line number
   const lineNumber = getLineNumberFromPosition(text, cursorPos);
-  
+
   // Create highlight element
   const highlight = document.createElement('div');
   highlight.className = 'active-line';
-  
+
   // Calculate position
   const lineHeight = getLineHeight(ta);
   const top = (lineNumber - 1) * lineHeight + parseInt(window.getComputedStyle(ta).paddingTop);
-  
+
   // Set position and dimensions
   highlight.style.top = `${top}px`;
   highlight.style.height = `${lineHeight}px`;
-  
+
   // Add to editor wrap
   editorWrap.appendChild(highlight);
 }
@@ -1109,35 +1101,35 @@ function updateSelectedLinesHighlight(ta, editorWrap) {
   // Remove existing selected line highlights
   const existingHighlights = editorWrap.querySelectorAll('.selected-line');
   existingHighlights.forEach(el => el.remove());
-  
+
   // Check if there's a selection
   const selectionStart = ta.selectionStart;
   const selectionEnd = ta.selectionEnd;
-  
+
   if (selectionStart === selectionEnd) return; // No selection
-  
+
   const text = ta.value;
-  
+
   // Get start and end line numbers
   const startLine = getLineNumberFromPosition(text, selectionStart);
   const endLine = getLineNumberFromPosition(text, selectionEnd);
-  
+
   // Get line height
   const lineHeight = getLineHeight(ta);
   const paddingTop = parseInt(window.getComputedStyle(ta).paddingTop);
-  
+
   // Create highlight elements for each selected line
   for (let i = startLine; i <= endLine; i++) {
     const highlight = document.createElement('div');
     highlight.className = 'selected-line';
-    
+
     // Calculate position
     const top = (i - 1) * lineHeight + paddingTop;
-    
+
     // Set position and dimensions
     highlight.style.top = `${top}px`;
     highlight.style.height = `${lineHeight}px`;
-    
+
     // Add to editor wrap
     editorWrap.appendChild(highlight);
   }
@@ -1192,7 +1184,7 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   // Parse content and color metadata
   let actualContent = contentIfAvailable;
   let tabColor = null;
-  
+
   // Check if content has color metadata
   if (contentIfAvailable && contentIfAvailable.startsWith("__CRYPTEXA_COLOR__:")) {
     const colorEndIndex = contentIfAvailable.indexOf("\n");
@@ -1207,26 +1199,26 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   li.className = "tab-header";
   li.dataset.tabId = id;
   li.draggable = true;
-  
+
   // Store color in dataset
   if (tabColor) {
     li.dataset.tabColor = tabColor;
     li.style.backgroundColor = tabColor;
   }
-  
+
   const a = document.createElement("a");
   a.href = `#${id}`;
   a.className = "tab-title";
   a.textContent = "Empty Tab";
-  
+
   const span = document.createElement("span");
   span.className = "close";
   span.title = "Remove Tab";
   span.textContent = "×";
-  
+
   li.appendChild(a);
   li.appendChild(span);
-  
+
   if (insertAfter && insertAfter.nextSibling) {
     headersContainer.insertBefore(li, insertAfter.nextSibling);
   } else {
@@ -1259,7 +1251,7 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
     // Ensure title reflects actual content if empty/whitespace
     a.textContent = getTitleFromContent("");
   }
-  
+
 
 
   // Wire updates
@@ -1299,7 +1291,7 @@ function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null) {
   } else {
     requestAnimationFrame(updateGutter);
   }
-  
+
   // Initialize line highlights
   const editorWrap = panel.querySelector(".editor-wrap");
   if (editorWrap) {
@@ -1383,7 +1375,7 @@ async function finishInitialization(shouldSkipSettingContent) {
       const isHuge = (ta.value && ta.value.length > 50000);
       panel.dataset.huge = isHuge ? "1" : "";
     }
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 function decryptContentAndFinishInitialization(isOld) {
@@ -1462,14 +1454,14 @@ async function getContentFromTabs() {
     const id = headers[i].dataset.tabId;
     const ta = qs(`#${id} textarea.textarea-contents`);
     const tabColor = headers[i].dataset.tabColor;
-    
+
     if (i > 0) all += sep;
-    
+
     // Add color metadata if tab has a color
     if (tabColor && tabColor !== "#ffffff") {
       all += `__CRYPTEXA_COLOR__:${tabColor}\n`;
     }
-    
+
     all += ta.value;
   }
   const meta = state.getMobileAppMetadataTabContent();
@@ -1591,7 +1583,7 @@ function wireEvents() {
         if (!isHuge && start <= 201 && currentTabTitle) {
           currentTabTitle.textContent = getTitleFromContent(ta.value.substring(0, 200));
         }
-      } catch {}
+      } catch { /* ignore */ }
 
       // Gutter update throttling for large notes: avoid per-keystroke full regen
       const panel = ta.closest(".tab-panel");
@@ -1615,7 +1607,7 @@ function wireEvents() {
           updateGutterForTextarea(ta, gutter);
         }
       }
-      
+
       // Update line highlights
       if (editorWrap) {
         updateActiveLineHighlight(ta, editorWrap);
@@ -1623,13 +1615,13 @@ function wireEvents() {
       }
     });
   });
-  
+
   // Handle cursor movement and selection changes
   document.addEventListener("selectionchange", () => {
     const ta = document.activeElement;
     if (!(ta instanceof HTMLTextAreaElement)) return;
     if (!ta.classList.contains("textarea-contents")) return;
-    
+
     const panel = ta.closest(".tab-panel");
     const editorWrap = panel && panel.querySelector(".editor-wrap");
     if (editorWrap) {
@@ -1637,12 +1629,12 @@ function wireEvents() {
       updateSelectedLinesHighlight(ta, editorWrap);
     }
   });
-  
+
   // Handle mouseup events (for when user selects text with mouse)
   document.addEventListener("mouseup", (e) => {
     if (!(e.target instanceof HTMLTextAreaElement)) return;
     if (!e.target.classList.contains("textarea-contents")) return;
-    
+
     const ta = e.target;
     const panel = ta.closest(".tab-panel");
     const editorWrap = panel && panel.querySelector(".editor-wrap");
@@ -1736,7 +1728,7 @@ function wireEvents() {
 
   // Keyboard shortcuts
   setupKeyboardShortcuts();
-  
+
   // Auto-save functionality removed for data safety
 
   // Backup export button (visible before decrypt) - avoid duplicate creation
@@ -1759,10 +1751,10 @@ function wireEvents() {
 }
 
 // ---------- Dialog Functions ----------
-const showKeyboardShortcuts = () => qs("#shortcuts-dialog").showModal();
+
 // Remove dead code: state.delete() does not exist; use state.deleteSite instead where needed
 
-  
+
 
 
 // ---------- Status Indicator ----------
@@ -1777,7 +1769,7 @@ const updateStatusIndicator = (status, text) => {
 const updateLastSaved = () => {
   const lastSavedElement = qs("#last-saved");
   if (!lastSavedElement) return;
-  
+
   const now = new Date();
   const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   lastSavedElement.textContent = `Last saved: ${timeString}`;
@@ -1791,14 +1783,14 @@ const hideLastSaved = () => {
   }
 };
 
-  
-  // Listen for text changes to update status
-  document.addEventListener("input", e => {
-    if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
-      updateStatusIndicator("modified", "Modified");
-      hideLastSaved();
-    }
-  });
+
+// Listen for text changes to update status
+document.addEventListener("input", e => {
+  if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
+    updateStatusIndicator("modified", "Modified");
+    hideLastSaved();
+  }
+});
 
 
 // ---------- Keyboard Shortcuts ----------
@@ -1806,10 +1798,10 @@ function setupKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
     // Skip if user is typing in an input field (except textarea)
     if (e.target.tagName === "INPUT" && e.target.type !== "textarea") return;
-    
+
     const isCtrlOrCmd = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
-    
+
     // Ctrl/Cmd + R: Reload
     if (isCtrlOrCmd && key === "r" && !e.shiftKey) {
       e.preventDefault();
@@ -1818,14 +1810,14 @@ function setupKeyboardShortcuts() {
       }
       return;
     }
-    
+
     // Ctrl/Cmd + T: New Tab
     if (isCtrlOrCmd && key === "t") {
       e.preventDefault();
       addTab(false);
       return;
     }
-    
+
     // Ctrl/Cmd + W: Close Tab (if more than one tab)
     if (isCtrlOrCmd && key === "w") {
       const headers = qsa(".tab-header");
@@ -1839,7 +1831,7 @@ function setupKeyboardShortcuts() {
       }
       return;
     }
-    
+
     // Ctrl/Cmd + Shift + S: Save with new password
     if (isCtrlOrCmd && e.shiftKey && key === "s") {
       e.preventDefault();
@@ -1848,16 +1840,16 @@ function setupKeyboardShortcuts() {
       }
       return;
     }
-    
+
     // Ctrl/Cmd + E: Export encrypted backup
     if (isCtrlOrCmd && key === "e") {
       e.preventDefault();
       qs("#button-export").click();
       return;
     }
-    
 
-    
+
+
     // Ctrl/Cmd + 1-9: Switch to tab by number
     if (isCtrlOrCmd && key >= "1" && key <= "9") {
       e.preventDefault();
@@ -1868,7 +1860,7 @@ function setupKeyboardShortcuts() {
       }
       return;
     }
-    
+
     // Escape: Focus active textarea
     if (key === "escape") {
       focusActiveTextarea();
@@ -1916,7 +1908,7 @@ function setupKeyboardShortcuts() {
   function getStored() {
     try {
       return localStorage.getItem(STORAGE_KEY);
-    } catch (_) {
+    } catch {
       return null;
     }
   }
@@ -1924,7 +1916,7 @@ function setupKeyboardShortcuts() {
   function store(theme) {
     try {
       localStorage.setItem(STORAGE_KEY, theme);
-    } catch (_) {
+    } catch {
       /* ignore storage errors */
     }
   }
@@ -1987,13 +1979,13 @@ function setupKeyboardShortcuts() {
     initTheme();
     wireToggle();
     initKeyboardShortcuts();
-    
+
     // Global color picker functionality
     const globalColorPicker = document.getElementById('tab-color-picker');
     if (globalColorPicker) {
       // Debounce color changes for better performance
       let colorChangeTimeout;
-      
+
       globalColorPicker.addEventListener('input', (e) => {
         try {
           const activeTab = document.querySelector('.tab-header.active');
@@ -2006,7 +1998,7 @@ function setupKeyboardShortcuts() {
           console.error('Error updating tab color preview:', error);
         }
       });
-      
+
       globalColorPicker.addEventListener('change', (e) => {
         try {
           const activeTab = document.querySelector('.tab-header.active');
@@ -2017,10 +2009,10 @@ function setupKeyboardShortcuts() {
               console.warn('Invalid color format:', newColor);
               return;
             }
-            
+
             activeTab.dataset.tabColor = newColor;
             activeTab.style.backgroundColor = newColor;
-            
+
             // Debounce the save operation
             clearTimeout(colorChangeTimeout);
             colorChangeTimeout = setTimeout(() => {
@@ -2032,7 +2024,7 @@ function setupKeyboardShortcuts() {
           console.error('Error updating tab color:', error);
         }
       });
-      
+
       // Update color picker when tab changes
       document.addEventListener('tab-activated', (e) => {
         try {
@@ -2048,7 +2040,7 @@ function setupKeyboardShortcuts() {
         }
       });
     }
-    
+
     // Start health monitoring in production
     if (window.location.protocol === 'https:' || window.location.hostname !== 'localhost') {
       startHealthMonitoring();
