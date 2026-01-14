@@ -66,9 +66,28 @@ if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'ap
     }
   }
 } else if (fs.existsSync('app.js')) {
-  // Fall back to copying original app.js
-  fs.copyFileSync('app.js', path.join(BUILD_DIR, 'app.js'));
-  console.log('✅ Copied app.js');
+  // Fall back to copying and optionally minifying app.js
+  const jsSource = fs.readFileSync('app.js', 'utf8');
+
+  if (hasEsbuild) {
+    try {
+      // Use esbuild's transform API for minification (faster than terser)
+      const esbuild = require('esbuild');
+      const result = esbuild.transformSync(jsSource, {
+        minify: true,
+        target: ['es2020'],
+      });
+      fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), result.code);
+      console.log('✅ Minified and copied app.js');
+    } catch (error) {
+      console.warn('⚠️  JS minification failed:', error.message);
+      fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), jsSource);
+      console.log('✅ Copied app.js (unminified)');
+    }
+  } else {
+    fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), jsSource);
+    console.log('✅ Copied app.js (unminified - install esbuild for minification)');
+  }
 }
 
 // Copy static files
