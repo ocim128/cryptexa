@@ -3,7 +3,7 @@
  * Sets up the test environment with browser-like globals
  */
 
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
 
 // Mock crypto.subtle for Web Crypto API testing
 const cryptoMock = {

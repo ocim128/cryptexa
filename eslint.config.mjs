@@ -2,7 +2,7 @@ import globals from "globals";
 import pluginJs from "@eslint/js";
 
 export default [
-    { ignores: ["**/*.min.js"] },
+    { ignores: ["**/*.min.js", "dist/**"] },
 
     {
         files: ["**/*.js"],
@@ -12,7 +12,7 @@ export default [
         }
     },
     {
-        files: ["tests/unit/**/*.js", "vitest.config.js"],
+        files: ["tests/unit/**/*.js", "vitest.config.js", "src/**/*.js"],
         languageOptions: {
             sourceType: "module"
         }

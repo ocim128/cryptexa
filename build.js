@@ -3,6 +3,7 @@
 /**
  * Production Build Script for Cryptexa
  * Optimizes files for production deployment
+ * Supports both modular (src/) and bundled (app.js) output
  */
 
 const fs = require('fs');
@@ -11,10 +12,21 @@ const path = require('path');
 
 // Configuration
 const BUILD_DIR = 'dist';
-const STATIC_FILES = ['index.html', 'app.js', 'styles.css', 'server.js', 'package.json'];
+const STATIC_FILES = ['index.html', 'styles.css', 'server.js', 'package.json', 'icon.png'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore'];
+const SRC_DIR = 'src';
 
 console.log('🚀 Building Cryptexa for production...');
+
+// Check if esbuild is available for bundling
+let hasEsbuild = false;
+try {
+  require.resolve('esbuild');
+  hasEsbuild = true;
+} catch {
+  console.log('⚠️  esbuild not found. Install with: npm install -D esbuild');
+  console.log('   Falling back to copying the original app.js');
+}
 
 // Clean build directory
 if (fs.existsSync(BUILD_DIR)) {
@@ -26,13 +38,64 @@ if (fs.existsSync(BUILD_DIR)) {
 fs.mkdirSync(BUILD_DIR, { recursive: true });
 console.log('✅ Created build directory');
 
+// Bundle src/ files if esbuild is available and src/ exists
+if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'app.js'))) {
+  try {
+    console.log('📦 Bundling modular source files...');
+
+    // Use esbuild to bundle the modular source into a single file
+
+    const esbuild = require('esbuild');
+    esbuild.buildSync({
+      entryPoints: [path.join(SRC_DIR, 'app.js')],
+      bundle: true,
+      minify: true,
+      outfile: path.join(BUILD_DIR, 'app.js'),
+      format: 'iife',
+      target: ['es2020'],
+      sourcemap: false,
+    });
+
+    console.log('✅ Bundled modular source to app.js');
+  } catch (error) {
+    console.error('❌ Bundle failed:', error.message);
+    console.log('   Falling back to copying original app.js');
+    if (fs.existsSync('app.js')) {
+      fs.copyFileSync('app.js', path.join(BUILD_DIR, 'app.js'));
+      console.log('✅ Copied original app.js');
+    }
+  }
+} else if (fs.existsSync('app.js')) {
+  // Fall back to copying original app.js
+  fs.copyFileSync('app.js', path.join(BUILD_DIR, 'app.js'));
+  console.log('✅ Copied app.js');
+}
+
 // Copy static files
 STATIC_FILES.forEach(file => {
-  if (fs.existsSync(file)) {
+  if (fs.existsSync(file) && file !== 'app.js') {
     fs.copyFileSync(file, path.join(BUILD_DIR, file));
     console.log(`✅ Copied ${file}`);
   }
 });
+
+// Patch index.html to use bundled app.js
+const indexHtmlPath = path.join(BUILD_DIR, 'index.html');
+if (fs.existsSync(indexHtmlPath)) {
+  let html = fs.readFileSync(indexHtmlPath, 'utf8');
+  // Replace module import with bundled script
+  html = html.replace(
+    /<script type="module" src="\.\/src\/app\.js"><\/script>/,
+    '<script src="./app.js"></script>'
+  );
+  // Fallback if user using old path
+  html = html.replace(
+    /<script src="\.\/app\.js"><\/script>/,
+    '<script src="./app.js"></script>'
+  );
+  fs.writeFileSync(indexHtmlPath, html);
+  console.log('✅ Patched index.html for production');
+}
 
 // Copy additional files
 COPY_FILES.forEach(file => {
@@ -91,6 +154,36 @@ const deployInstructions = `# Cryptexa Production Deployment
    \`\`\`bash
    npm run prod
    \`\`\`
+
+## Modular Architecture
+
+The source code has been modularized for better maintainability:
+
+\`\`\`
+src/
+├── crypto/
+│   ├── aes-gcm.js      # Encryption/decryption
+│   ├── pbkdf2.js       # Key derivation
+│   └── index.js        # Crypto exports
+├── state/
+│   ├── ClientState.js  # State management class
+│   └── index.js        # State exports
+├── ui/
+│   ├── dialogs.js      # Dialog management
+│   ├── tabs.js         # Tab management
+│   ├── toast.js        # Notifications
+│   ├── themes.js       # Theme toggling
+│   └── index.js        # UI exports
+├── utils/
+│   ├── fetch.js        # fetchWithRetry, debounce
+│   ├── dom.js          # DOM helpers (qs, qsa, on)
+│   ├── crypto-helpers.js # Crypto utilities
+│   └── index.js        # Utils exports
+└── app.js              # Main entry, orchestration
+\`\`\`
+
+For development, you can work with the modular source in src/.
+The build process bundles everything into a single app.js.
 
 ## Files in this build:
 ${[...STATIC_FILES, ...COPY_FILES].map(f => `- ${f}`).join('\n')}

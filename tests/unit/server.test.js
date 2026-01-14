@@ -3,7 +3,7 @@
  * Tests for API endpoints and server logic
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Mock database class for testing
 class MockDatabase {

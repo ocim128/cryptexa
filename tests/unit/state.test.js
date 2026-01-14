@@ -3,7 +3,7 @@
  * Tests for ClientState class and state management
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Simulated ClientState for testing (simplified version)
 class TestClientState {

@@ -7,8 +7,11 @@
   "scripts": {
     "start": "set NODE_ENV=production && node server.js",
     "dev": "set NODE_ENV=development && node server.js",
+    "dev:watch": "set NODE_ENV=development && node --watch server.js",
     "prod": "set NODE_ENV=production && node server.js",
     "build": "node build.js",
+    "bundle": "esbuild src/app.js --bundle --minify --outfile=app.min.js --format=iife --target=es2020",
+    "bundle:dev": "esbuild src/app.js --bundle --outfile=app.js --format=iife --target=es2020 --sourcemap",
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test"
@@ -26,6 +29,7 @@
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.57.0",
     "@vitest/coverage-v8": "^4.0.17",
+    "esbuild": "^0.24.0",
     "eslint": "^9.39.2",
     "globals": "^17.0.0",
     "jsdom": "^27.4.0",
