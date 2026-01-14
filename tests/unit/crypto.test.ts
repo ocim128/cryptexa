@@ -13,21 +13,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-function bufToHex(buf) {
+function bufToHex(buf: ArrayBufferLike): string {
     const arr = new Uint8Array(buf);
     let s = "";
-    for (let i = 0; i < arr.length; i++) s += arr[i].toString(16).padStart(2, "0");
+    for (let i = 0; i < arr.length; i++) s += (arr[i] || 0).toString(16).padStart(2, "0");
     return s;
 }
 
-function hexToBuf(hex) {
+function hexToBuf(hex: string): ArrayBuffer {
     const len = hex.length / 2;
     const out = new Uint8Array(len);
     for (let i = 0; i < len; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
     return out.buffer;
 }
 
-function simpleWeakHash(str) {
+function simpleWeakHash(str: string): string {
     let h1 = 0x811c9dc5, h2 = 0x1000193;
     for (let i = 0; i < str.length; i++) {
         const c = str.charCodeAt(i);
@@ -191,12 +191,12 @@ describe('TextEncoder/TextDecoder', () => {
 
 describe('Debounce Function', () => {
     // Recreate debounce for testing
-    function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
+    function debounce(func: Function, wait: number) {
+        let timeout: any;
+        return function (this: any, ...args: any[]) {
             const later = () => {
                 clearTimeout(timeout);
-                func(...args);
+                func.apply(this, args);
             };
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);

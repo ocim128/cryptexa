@@ -12,7 +12,7 @@ const path = require('path');
 
 // Configuration
 const BUILD_DIR = 'dist';
-const STATIC_FILES = ['index.html', 'styles.css', 'server.js', 'package.json', 'icon.png'];
+const STATIC_FILES = ['index.html', 'styles.css', 'package.json', 'icon.png'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore'];
 const SRC_DIR = 'src';
 
@@ -39,7 +39,7 @@ fs.mkdirSync(BUILD_DIR, { recursive: true });
 console.log('✅ Created build directory');
 
 // Bundle src/ files if esbuild is available and src/ exists
-if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'app.js'))) {
+if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'app.ts'))) {
   try {
     console.log('📦 Bundling modular source files...');
 
@@ -47,7 +47,7 @@ if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'ap
 
     const esbuild = require('esbuild');
     esbuild.buildSync({
-      entryPoints: [path.join(SRC_DIR, 'app.js')],
+      entryPoints: [path.join(SRC_DIR, 'app.ts')],
       bundle: true,
       minify: true,
       outfile: path.join(BUILD_DIR, 'app.js'),
@@ -97,6 +97,23 @@ STATIC_FILES.forEach(file => {
     console.log(`✅ Copied ${file}`);
   }
 });
+
+// Compile server.ts to dist/server.js
+if (hasEsbuild && fs.existsSync('server.ts')) {
+  try {
+    console.log('📦 Compiling server.ts...');
+    require('esbuild').buildSync({
+      entryPoints: ['server.ts'],
+      platform: 'node',
+      outfile: path.join(BUILD_DIR, 'server.js'),
+      target: 'node18',
+      format: 'cjs',
+    });
+    console.log('✅ Compiled server.ts to dist/server.js');
+  } catch (e) {
+    console.error('❌ Failed to compile server.ts:', e);
+  }
+}
 
 // Patch index.html to use bundled app.js
 const indexHtmlPath = path.join(BUILD_DIR, 'index.html');

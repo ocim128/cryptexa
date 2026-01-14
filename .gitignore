@@ -154,7 +154,6 @@ test-results/
 coverage/
 
 # Local development files
-run.bat
 *.local
 
 # Sensitive configuration

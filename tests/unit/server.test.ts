@@ -7,19 +7,21 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 // Mock database class for testing
 class MockDatabase {
+    sites: Record<string, any>;
+
     constructor() {
         this.sites = {};
     }
 
-    async getSite(siteKey) {
+    async getSite(siteKey: string) {
         return this.sites[siteKey] || null;
     }
 
-    async saveSite(siteKey, data) {
+    async saveSite(siteKey: string, data: any) {
         this.sites[siteKey] = data;
     }
 
-    async deleteSite(siteKey) {
+    async deleteSite(siteKey: string) {
         delete this.sites[siteKey];
     }
 
@@ -29,7 +31,7 @@ class MockDatabase {
 }
 
 describe('Database Abstraction Layer', () => {
-    let db;
+    let db: MockDatabase;
 
     beforeEach(() => {
         db = new MockDatabase();
@@ -114,7 +116,7 @@ describe('Database Abstraction Layer', () => {
 
 describe('API Request Validation', () => {
     // Validation helper functions (mimicking server logic)
-    function validateSaveRequest(body) {
+    function validateSaveRequest(body: any) {
         const { site, initHashContent, currentHashContent, encryptedContent } = body || {};
         if (!site) return { valid: false, error: 'Missing site' };
         if (typeof initHashContent !== 'string') return { valid: false, error: 'Invalid initHashContent' };
@@ -123,7 +125,7 @@ describe('API Request Validation', () => {
         return { valid: true };
     }
 
-    function validateDeleteRequest(body) {
+    function validateDeleteRequest(body: any) {
         const { site, initHashContent } = body || {};
         if (!site) return { valid: false, error: 'Missing site' };
         if (typeof initHashContent !== 'string') return { valid: false, error: 'Invalid initHashContent' };
@@ -215,7 +217,7 @@ describe('API Request Validation', () => {
 });
 
 describe('Overwrite Protection Logic', () => {
-    function checkOverwriteAllowed(existingHash, providedHash) {
+    function checkOverwriteAllowed(existingHash: string | null | undefined, providedHash: string | null | undefined) {
         // If no existing hash, allow (new site)
         if (!existingHash) return true;
         // Otherwise, hashes must match
@@ -243,7 +245,7 @@ describe('Overwrite Protection Logic', () => {
 });
 
 describe('Encrypted Content Format', () => {
-    function parseEncryptedContent(eContent) {
+    function parseEncryptedContent(eContent: any) {
         if (!eContent || typeof eContent !== 'string') {
             return { valid: false, error: 'Invalid content' };
         }

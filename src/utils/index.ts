@@ -26,3 +26,6 @@ export {
     hideHint,
     ensureObscureOverlay
 } from './dom.js';
+
+// Re-export types
+export type { PasswordModeOptions } from './dom.js';

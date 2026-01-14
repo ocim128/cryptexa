@@ -3,23 +3,26 @@
  * Provides theme toggling with persistence and accessibility
  */
 
-const STORAGE_KEY = 'theme-preference'; // 'dark' | 'light'
+/** Theme preference type */
+export type ThemePreference = 'light' | 'dark';
+
+const STORAGE_KEY = 'theme-preference';
 const root = document.documentElement;
 
 /**
  * Gets system color scheme preference
- * @returns {'light'|'dark'}
+ * @returns System theme preference
  */
-export function getSystemPref() {
+export function getSystemPref(): ThemePreference {
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
         ? 'light' : 'dark';
 }
 
 /**
  * Gets stored theme preference from localStorage
- * @returns {string|null}
+ * @returns Stored theme or null
  */
-export function getStored() {
+export function getStored(): string | null {
     try {
         return localStorage.getItem(STORAGE_KEY);
     } catch {
@@ -29,9 +32,9 @@ export function getStored() {
 
 /**
  * Stores theme preference to localStorage
- * @param {string} theme - Theme to store
+ * @param theme - Theme to store
  */
-export function store(theme) {
+export function store(theme: ThemePreference): void {
     try {
         localStorage.setItem(STORAGE_KEY, theme);
     } catch {
@@ -41,23 +44,23 @@ export function store(theme) {
 
 /**
  * Applies theme to document and updates toggle button
- * @param {string} theme - Theme to apply
+ * @param theme - Theme to apply
  */
-export function applyTheme(theme) {
+export function applyTheme(theme: ThemePreference): void {
     root.classList.remove('theme-dark', 'theme-light');
     if (theme === 'light') {
         root.classList.add('theme-light');
     } else {
-        root.classList.add('theme-dark'); // default explicit
+        root.classList.add('theme-dark');
     }
     updateToggle(theme);
 }
 
 /**
  * Gets current active theme
- * @returns {'light'|'dark'}
+ * @returns Current theme
  */
-export function currentTheme() {
+export function currentTheme(): ThemePreference {
     const stored = getStored();
     if (stored === 'dark' || stored === 'light') return stored;
     if (root.classList.contains('theme-light')) return 'light';
@@ -68,14 +71,16 @@ export function currentTheme() {
 
 /**
  * Updates theme toggle button state
- * @param {string} theme - Current theme
+ * @param theme - Current theme
  */
-export function updateToggle(theme) {
+export function updateToggle(theme: ThemePreference): void {
     const btn = document.getElementById('theme-toggle');
     if (!btn) return;
+
     const label = btn.querySelector('.label');
     const icon = btn.querySelector('.icon');
     const isDark = theme === 'dark';
+
     btn.setAttribute('aria-pressed', String(isDark));
     if (label) label.textContent = isDark ? 'Dark' : 'Light';
     if (icon) icon.textContent = isDark ? '🌙' : '🔆';
@@ -84,29 +89,36 @@ export function updateToggle(theme) {
 /**
  * Initializes theme on page load
  */
-export function initTheme() {
-    const initial = getStored() || 'light'; // default to light
+export function initTheme(): void {
+    const initial = (getStored() || 'light') as ThemePreference;
     applyTheme(initial);
 }
 
 /**
  * Wires up theme toggle button and system preference listener
  */
-export function wireThemeToggle() {
+export function wireThemeToggle(): void {
     const btn = document.getElementById('theme-toggle');
     if (!btn) return;
+
     btn.addEventListener('click', () => {
-        const next = currentTheme() === 'dark' ? 'light' : 'dark';
+        const next: ThemePreference = currentTheme() === 'dark' ? 'light' : 'dark';
         applyTheme(next);
         store(next);
     });
+
     if (window.matchMedia) {
         const mq = window.matchMedia('(prefers-color-scheme: light)');
-        const handleChange = () => {
+        const handleChange = (): void => {
             if (getStored()) return; // user preference wins
             applyTheme(getSystemPref());
         };
-        if (mq.addEventListener) mq.addEventListener('change', handleChange);
-        else if (mq.addListener) mq.addListener(handleChange);
+
+        if (mq.addEventListener) {
+            mq.addEventListener('change', handleChange);
+        } else if ('addListener' in mq) {
+            // Legacy support
+            (mq as MediaQueryList).addListener(handleChange);
+        }
     }
 }

@@ -2,7 +2,7 @@ import globals from "globals";
 import pluginJs from "@eslint/js";
 
 export default [
-    { ignores: ["**/*.min.js", "dist/**"] },
+    { ignores: ["**/*.min.js", "dist/**", "_archive/**"] },
 
     {
         files: ["**/*.js"],

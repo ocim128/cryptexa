@@ -22,7 +22,6 @@
 // IMPORTS (ES Modules)
 // ============================================================================
 
-// Unused crypto helpers removed
 import { debounce } from './utils/fetch.js';
 import { qs, qsa, on, setPasswordMode } from './utils/dom.js';
 import { toast, showNotification } from './ui/toast.js';
@@ -30,7 +29,6 @@ import { openPasswordDialog, openConfirmDialog } from './ui/dialogs.js';
 import { initTheme, wireThemeToggle } from './ui/themes.js';
 import {
     initTabsLayout,
-    refreshTabs,
     activateTab,
     addTab,
     focusActiveTextarea,
@@ -53,17 +51,31 @@ setTabFunctions({
 });
 
 // ============================================================================
+// TYPE AUGMENTATION
+// ============================================================================
+
+declare global {
+    interface Window {
+        state: ClientState;
+    }
+
+    interface HTMLElement {
+        _lnDebounce?: () => void;
+    }
+}
+
+// ============================================================================
 // CONFIG
 // ============================================================================
 
-function getQueryParam(name) {
+function getQueryParam(name: string): string | null {
     const url = new URL(window.location.href);
     const v = url.searchParams.get(name);
     return v && v.trim().length ? v.trim() : null;
 }
 
 // Prefer path segment /:site; fallback to ?site=; else default
-function getSiteFromURL() {
+function getSiteFromURL(): string {
     const path = window.location.pathname || "/";
     // Normalize: remove leading/trailing slashes
     const seg = path.replace(/^\/+|\/+$/g, "");
@@ -75,7 +87,7 @@ function getSiteFromURL() {
 const SITE_ID = getSiteFromURL();
 
 // Accept either ?password=... or raw ?YourPass (whole querystring as password)
-const URL_PASSWORD = (function () {
+const URL_PASSWORD = (function (): string | null {
     const named = getQueryParam("password");
     if (named) return named;
     const qs = window.location.search || "";
@@ -92,15 +104,17 @@ const URL_PASSWORD = (function () {
 let state = new ClientState(SITE_ID, URL_PASSWORD);
 window.state = state; // valid for debugging
 let ignoreInputEvent = true;
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 
 // ============================================================================
 // KEYBOARD SHORTCUTS
 // ============================================================================
 
-function initKeyboardShortcuts() {
+function initKeyboardShortcuts(): void {
     document.addEventListener('keydown', (e) => {
         // Skip if user is typing in input fields
-        if (e.target.tagName === 'INPUT' && e.target.type !== 'color') return;
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'color') return;
 
         const isCtrl = e.ctrlKey || e.metaKey;
         const isShift = e.shiftKey;
@@ -147,7 +161,7 @@ function initKeyboardShortcuts() {
             const tabIndex = parseInt(e.key) - 1;
             const tabs = document.querySelectorAll('.tab-header');
             if (tabs[tabIndex]) {
-                tabs[tabIndex].querySelector('.tab-title')?.click();
+                (tabs[tabIndex].querySelector('.tab-title') as HTMLElement)?.click();
             }
             return;
         }
@@ -158,7 +172,7 @@ function initKeyboardShortcuts() {
             const tabs = document.querySelectorAll('.tab-header');
             const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
             const nextIndex = (activeIndex + 1) % tabs.length;
-            tabs[nextIndex]?.querySelector('.tab-title')?.click();
+            (tabs[nextIndex]?.querySelector('.tab-title') as HTMLElement)?.click();
             return;
         }
 
@@ -168,7 +182,7 @@ function initKeyboardShortcuts() {
             const tabs = document.querySelectorAll('.tab-header');
             const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
             const prevIndex = activeIndex === 0 ? tabs.length - 1 : activeIndex - 1;
-            tabs[prevIndex]?.querySelector('.tab-title')?.click();
+            (tabs[prevIndex]?.querySelector('.tab-title') as HTMLElement)?.click();
             return;
         }
 
@@ -181,7 +195,7 @@ function initKeyboardShortcuts() {
 
         // Escape: Close dialogs or focus textarea
         if (e.key === 'Escape') {
-            const openDialog = document.querySelector('dialog[open]');
+            const openDialog = document.querySelector('dialog[open]') as HTMLDialogElement;
             if (openDialog) {
                 openDialog.close();
             } else {
@@ -192,7 +206,7 @@ function initKeyboardShortcuts() {
     });
 }
 
-function showKeyboardShortcutsHelp() {
+function showKeyboardShortcutsHelp(): void {
     const shortcuts = [
         { keys: 'Ctrl+S', desc: 'Save notes' },
         { keys: 'Ctrl+Alt+T', desc: 'New tab' },
@@ -229,7 +243,7 @@ window.addEventListener('unhandledrejection', (event) => {
 if ('performance' in window) {
     window.addEventListener('load', () => {
         setTimeout(() => {
-            const perfData = performance.getEntriesByType('navigation')[0];
+            const perfData = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
             if (perfData) {
                 console.log('Page load time:', Math.round(perfData.loadEventEnd - perfData.fetchStart), 'ms');
             }
@@ -238,7 +252,7 @@ if ('performance' in window) {
 }
 
 // Health check function
-async function checkServerHealth() {
+async function checkServerHealth(): Promise<boolean> {
     try {
         const response = await fetch('/health', { method: 'GET' });
         return response.ok;
@@ -248,8 +262,7 @@ async function checkServerHealth() {
 }
 
 // Periodic health check (every 5 minutes)
-let healthCheckInterval;
-function startHealthMonitoring() {
+function startHealthMonitoring(): void {
     healthCheckInterval = setInterval(async () => {
         const isHealthy = await checkServerHealth();
         if (!isHealthy) {
@@ -260,7 +273,7 @@ function startHealthMonitoring() {
 
 // Stop health monitoring
 // eslint-disable-next-line no-unused-vars
-function stopHealthMonitoring() {
+export function stopHealthMonitoring(): void {
     if (healthCheckInterval) {
         clearInterval(healthCheckInterval);
         healthCheckInterval = null;
@@ -271,11 +284,13 @@ function stopHealthMonitoring() {
 // BUTTON ENABLEMENT
 // ============================================================================
 
-function updateButtonEnablement(isTextModified, isSiteNew) {
-    const bSave = qs("#button-save");
-    const bSaveNew = qs("#button-savenew");
-    const bReload = qs("#button-reload");
-    const bDelete = qs("#button-delete");
+function updateButtonEnablement(isTextModified: boolean, isSiteNew: boolean): void {
+    const bSave = qs<HTMLButtonElement>("#button-save");
+    const bSaveNew = qs<HTMLButtonElement>("#button-savenew");
+    const bReload = qs<HTMLButtonElement>("#button-reload");
+    const bDelete = qs<HTMLButtonElement>("#button-delete");
+
+    if (!bSave || !bSaveNew || !bReload || !bDelete) return;
 
     bSave.disabled = !isTextModified;
     if (state.getInitialIsNew() === false && isTextModified) {
@@ -293,16 +308,17 @@ function updateButtonEnablement(isTextModified, isSiteNew) {
 // STATUS INDICATOR
 // ============================================================================
 
-const updateStatusIndicator = (status, text) => {
-    const indicator = qs("#status-indicator"), statusText = qs(".status-text");
+const updateStatusIndicator = (status: string, text: string): void => {
+    const indicator = qs("#status-indicator");
+    const statusText = qs(".status-text");
     if (!indicator || !statusText) return;
     indicator.classList.remove("saving", "error", "modified");
     if (status && status !== "ready") indicator.classList.add(status);
     statusText.textContent = text || "Ready";
 };
 
-const updateLastSaved = () => {
-    const lastSavedElement = qs("#last-saved");
+const updateLastSaved = (): void => {
+    const lastSavedElement = qs<HTMLElement>("#last-saved");
     if (!lastSavedElement) return;
 
     const now = new Date();
@@ -311,8 +327,8 @@ const updateLastSaved = () => {
     lastSavedElement.style.display = 'inline';
 };
 
-const hideLastSaved = () => {
-    const lastSavedElement = qs("#last-saved");
+const hideLastSaved = (): void => {
+    const lastSavedElement = qs<HTMLElement>("#last-saved");
     if (lastSavedElement) {
         lastSavedElement.style.display = 'none';
     }
@@ -330,7 +346,7 @@ document.addEventListener("input", e => {
 // INITIALIZATION
 // ============================================================================
 
-async function initSite() {
+async function initSite(): Promise<void> {
     // Optional auto-decrypt via ?password=...
     if (!state.getIsNew() && URL_PASSWORD) {
         const ok = await state.setLoginPasswordAndContentIfCorrect(URL_PASSWORD);
@@ -348,7 +364,7 @@ async function initSite() {
     }
 }
 
-async function finishInitialization(shouldSkipSettingContent) {
+async function finishInitialization(shouldSkipSettingContent?: boolean): Promise<void> {
     state.setInitHashContent();
     updateButtonEnablement(state.getIsTextModified(), state.getIsNew());
     focusActiveTextarea();
@@ -360,22 +376,22 @@ async function finishInitialization(shouldSkipSettingContent) {
 
     // Hint: mark huge tabs to avoid costly styles or scripts if needed
     try {
-        const panel = qs(".tab-panel.active");
-        const ta = panel && panel.querySelector("textarea.textarea-contents");
+        const panel = qs<HTMLElement>(".tab-panel.active");
+        const ta = panel && panel.querySelector<HTMLTextAreaElement>("textarea.textarea-contents");
         if (ta) {
             const isHuge = (ta.value && ta.value.length > 50000);
-            panel.dataset.huge = isHuge ? "1" : "";
+            if (panel) panel.dataset.huge = isHuge ? "1" : "";
         }
     } catch { /* ignore */ }
 }
 
-function decryptContentAndFinishInitialization(isOld) {
+function decryptContentAndFinishInitialization(isOld: boolean): void {
     const openPrompt = () => {
         // Hide UI until authenticated to avoid exposing content
         openPasswordDialog({
             obscure: true,
             hideUI: true,
-            onOk: async (pass) => {
+            onOk: async (pass: string): Promise<boolean> => {
                 if (pass == null) { focusActiveTextarea(); return false; }
                 const ok = await state.setLoginPasswordAndContentIfCorrect(pass);
                 if (ok) {
@@ -402,7 +418,7 @@ function decryptContentAndFinishInitialization(isOld) {
 // EXPORT ENCRYPTED BACKUP
 // ============================================================================
 
-function exportEncryptedBackup(eContent) {
+function exportEncryptedBackup(eContent: string): void {
     // Produce a minimal HTML that only contains a small decryptor for saltHex:ivHex:cipherHex
     const title = `Cryptexa Encrypted Backup (${SITE_ID})`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
@@ -456,7 +472,7 @@ document.getElementById("dec").onclick=async()=>{
 // EVENT WIRING
 // ============================================================================
 
-function wireEvents() {
+function wireEvents(): void {
     // Coalesce textarea input updates with rAF to reduce layout thrash
     let pendingRaf = 0;
     document.addEventListener("input", (e) => {
@@ -482,8 +498,8 @@ function wireEvents() {
             } catch { /* ignore */ }
 
             // Gutter update throttling for large notes: avoid per-keystroke full regen
-            const panel = ta.closest(".tab-panel");
-            const gutter = panel && panel.querySelector(".line-gutter");
+            const panel = ta.closest(".tab-panel") as HTMLElement;
+            const gutter = panel && panel.querySelector<HTMLElement>(".line-gutter");
             const editorWrap = panel && panel.querySelector(".editor-wrap");
             if (gutter) {
                 const isHuge = (ta.value && ta.value.length > 50000);
@@ -548,14 +564,14 @@ function wireEvents() {
         if (!e.target.classList.contains("textarea-contents")) return;
         const currentTabTitle = getCurrentTabTitle();
         setTimeout(() => {
-            const ta = e.target;
+            const ta = e.target as HTMLTextAreaElement;
             const isHuge = (ta.value && ta.value.length > 50000);
             if (!isHuge && currentTabTitle) {
                 currentTabTitle.textContent = getTitleFromContent();
             }
             // Deferred gutter update after paste
             const panel = ta.closest(".tab-panel");
-            const gutter = panel && panel.querySelector(".line-gutter");
+            const gutter = panel && panel.querySelector<HTMLElement>(".line-gutter");
             if (gutter) {
                 if (isHuge) {
                     if (!gutter._lnDebounce) {
@@ -571,7 +587,7 @@ function wireEvents() {
 
     // Tab inserts 4 spaces
     document.addEventListener("keydown", (e) => {
-        const ta = document.activeElement;
+        const ta = document.activeElement as HTMLTextAreaElement;
         const isTextarea = ta && ta.classList && ta.classList.contains("textarea-contents");
         const key = e.key || e.code;
         if (isTextarea && key === "Tab" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
@@ -587,10 +603,11 @@ function wireEvents() {
     });
 
     // Password input Enter key handling
-    on(qs("#enterpassword"), "keypress", (e) => {
-        if (e.which === 13 || e.key === "Enter") {
-            e.preventDefault();
-            const decryptButton = qs("#dialog-password button[value='ok']");
+    on(qs("#enterpassword") as HTMLElement, "keypress", (e) => {
+        const event = e as KeyboardEvent;
+        if (event.which === 13 || event.key === "Enter") {
+            event.preventDefault();
+            const decryptButton = qs("#dialog-password button[value='ok']") as HTMLButtonElement;
             if (decryptButton && !decryptButton.disabled) {
                 decryptButton.click();
             }
@@ -598,21 +615,22 @@ function wireEvents() {
     });
 
     // New password confirmation Enter key handling
-    on(qs("#newpassword2"), "keypress", (e) => {
-        if (e.which === 13 || e.key === "Enter") {
-            const saveButton = qs("#dialog-new-password button[value='ok']");
+    on(qs("#newpassword2") as HTMLElement, "keypress", (e) => {
+        const event = e as KeyboardEvent;
+        if (event.which === 13 || event.key === "Enter") {
+            const saveButton = qs("#dialog-new-password button[value='ok']") as HTMLButtonElement;
             if (saveButton) {
                 saveButton.click();
             }
-            e.preventDefault();
+            event.preventDefault();
         }
     });
 
     // Buttons
-    on(qs("#button-save"), "click", () => state.saveSite(state.getIsNew()));
-    on(qs("#button-savenew"), "click", () => state.saveSite(true));
-    on(qs("#button-reload"), "click", () => state.reloadSite());
-    on(qs("#button-delete"), "click", () => {
+    on(qs("#button-save") as HTMLElement, "click", () => state.saveSite(state.getIsNew()));
+    on(qs("#button-savenew") as HTMLElement, "click", () => state.saveSite(true));
+    on(qs("#button-reload") as HTMLElement, "click", () => state.reloadSite());
+    on(qs("#button-delete") as HTMLElement, "click", () => {
         openConfirmDialog("#dialog-confirm-delete-site", async (ok) => {
             if (ok) state.deleteSite();
             else focusActiveTextarea();
@@ -620,7 +638,7 @@ function wireEvents() {
     });
 
     // Help button
-    on(qs("#help-button"), "click", () => {
+    on(qs("#help-button") as HTMLElement, "click", () => {
         showKeyboardShortcutsHelp();
     });
 
@@ -634,7 +652,7 @@ function wireEvents() {
         backupBtn.textContent = "Export Encrypted Backup";
         backupBtn.title = "Download encrypted backup (before decrypt)";
         backupBtn.className = "";
-        qs("#menubar-buttons").appendChild(backupBtn);
+        qs("#menubar-buttons")?.appendChild(backupBtn);
         on(backupBtn, "click", () => {
             const eContent = state.remote.eContent;
             if (!eContent) {
@@ -647,10 +665,11 @@ function wireEvents() {
 }
 
 // Additional keyboard shortcuts setup
-function setupKeyboardShortcuts() {
+function setupKeyboardShortcuts(): void {
     document.addEventListener("keydown", (e) => {
         // Skip if user is typing in an input field (except textarea)
-        if (e.target.tagName === "INPUT" && e.target.type !== "textarea") return;
+        const target = e.target as HTMLElement;
+        if (target.tagName === "INPUT" && (target as HTMLInputElement).type !== "textarea") return;
 
         const isCtrlOrCmd = e.ctrlKey || e.metaKey;
         const key = e.key.toLowerCase();
@@ -658,7 +677,7 @@ function setupKeyboardShortcuts() {
         // Ctrl/Cmd + R: Reload
         if (isCtrlOrCmd && key === "r" && !e.shiftKey) {
             e.preventDefault();
-            if (!qs("#button-reload").disabled) {
+            if (!(qs("#button-reload") as HTMLButtonElement).disabled) {
                 state.reloadSite();
             }
             return;
@@ -678,7 +697,7 @@ function setupKeyboardShortcuts() {
                 e.preventDefault();
                 const activeHeader = qs(".tab-header.active");
                 if (activeHeader) {
-                    const closeBtn = activeHeader.querySelector(".close");
+                    const closeBtn = activeHeader.querySelector(".close") as HTMLElement;
                     if (closeBtn) closeBtn.click();
                 }
             }
@@ -688,7 +707,7 @@ function setupKeyboardShortcuts() {
         // Ctrl/Cmd + Shift + S: Save with new password
         if (isCtrlOrCmd && e.shiftKey && key === "s") {
             e.preventDefault();
-            if (!qs("#button-savenew").disabled) {
+            if (!(qs("#button-savenew") as HTMLButtonElement).disabled) {
                 state.saveSite(true);
             }
             return;
@@ -697,7 +716,7 @@ function setupKeyboardShortcuts() {
         // Ctrl/Cmd + E: Export encrypted backup
         if (isCtrlOrCmd && key === "e") {
             e.preventDefault();
-            qs("#button-export").click();
+            (qs("#button-export") as HTMLButtonElement)?.click();
             return;
         }
 
@@ -745,6 +764,7 @@ function setupKeyboardShortcuts() {
         initTabsLayout(() => state.updateIsTextModified(true));
         onWindowResize();
         wireEvents();
+        startHealthMonitoring();
 
         if (state.getIsNew() || !state.remote.eContent) {
             await setContentOfTabs("", state);
@@ -766,16 +786,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initKeyboardShortcuts();
 
     // Global color picker functionality
-    const globalColorPicker = document.getElementById('tab-color-picker');
+    const globalColorPicker = document.getElementById('tab-color-picker') as HTMLInputElement;
     if (globalColorPicker) {
-        // Debounce color changes for better performance
-        let colorChangeTimeout;
-
         globalColorPicker.addEventListener('input', (e) => {
             try {
-                const activeTab = document.querySelector('.tab-header.active');
+                const activeTab = document.querySelector('.tab-header.active') as HTMLElement;
                 if (activeTab) {
-                    const newColor = e.target.value;
+                    const target = e.target as HTMLInputElement;
+                    const newColor = target.value;
                     // Immediate visual feedback
                     activeTab.style.backgroundColor = newColor;
                 }
@@ -786,9 +804,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         globalColorPicker.addEventListener('change', (e) => {
             try {
-                const activeTab = document.querySelector('.tab-header.active');
+                const activeTab = document.querySelector('.tab-header.active') as HTMLElement;
                 if (activeTab) {
-                    const newColor = e.target.value;
+                    const target = e.target as HTMLInputElement;
+                    const newColor = target.value;
                     // Validate color format
                     if (!/^#[0-9A-F]{6}$/i.test(newColor)) {
                         console.warn('Invalid color format:', newColor);
@@ -798,36 +817,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     activeTab.dataset.tabColor = newColor;
                     activeTab.style.backgroundColor = newColor;
 
-                    // Debounce the save operation
-                    clearTimeout(colorChangeTimeout);
-                    colorChangeTimeout = setTimeout(() => {
-                        state.updateIsTextModified(true);
-                        refreshTabs();
-                    }, 300);
+                    // Trigger state update
+                    state.updateIsTextModified(true);
                 }
             } catch (error) {
-                console.error('Error updating tab color:', error);
+                console.error('Error updating tab color persistence:', error);
             }
         });
-
-        // Update color picker when tab changes
-        document.addEventListener('tab-activated', (e) => {
-            try {
-                const activeTab = e.detail?.tab;
-                if (activeTab && activeTab.dataset.tabColor) {
-                    globalColorPicker.value = activeTab.dataset.tabColor;
-                } else {
-                    globalColorPicker.value = '#ffffff';
-                }
-            } catch (error) {
-                console.error('Error updating color picker on tab change:', error);
-                globalColorPicker.value = '#ffffff'; // Fallback
-            }
-        });
-    }
-
-    // Start health monitoring in production
-    if (window.location.protocol === 'https:' || window.location.hostname !== 'localhost') {
-        startHealthMonitoring();
     }
 });

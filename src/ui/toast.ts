@@ -5,16 +5,34 @@
 
 import { qs } from '../utils/dom.js';
 
+/** Toast notification type */
+export type ToastType = 'info' | 'success' | 'error' | 'warning';
+
+/** Icon mapping for toast types */
+const TOAST_ICONS: Record<ToastType, string> = {
+    success: '✓',
+    error: '✕',
+    warning: '⚠',
+    info: 'ℹ'
+};
+
 /**
  * Enhanced toast notification system
- * @param {string} message - Message to display
- * @param {string} type - Type: 'info', 'success', 'error', 'warning'
- * @param {number} duration - Duration in milliseconds (default: 4000)
+ * @param message - Message to display
+ * @param type - Type: 'info', 'success', 'error', 'warning'
+ * @param duration - Duration in milliseconds (default: 4000)
  */
-export function toast(message, type = 'info', duration = 4000) {
+export function toast(
+    message: string,
+    type: ToastType = 'info',
+    duration: number = 4000
+): void {
     const container = document.getElementById('toast-container');
+
     if (!container) {
-        const outer = qs("#outer-toast"), el = qs("#toast");
+        // Fallback to legacy toast
+        const outer = qs<HTMLElement>("#outer-toast");
+        const el = qs<HTMLElement>("#toast");
         if (outer && el) {
             el.innerHTML = message;
             outer.style.display = "block";
@@ -23,24 +41,31 @@ export function toast(message, type = 'info', duration = 4000) {
         }
         return;
     }
+
     const toastEl = document.createElement('div');
     toastEl.className = `toast ${type}`;
-    const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
-    toastEl.innerHTML = `<div class="toast-content"><span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${message}</span><button class="toast-close" onclick="this.parentElement.parentElement.remove()">&times;</button></div>`;
+
+    const icon = TOAST_ICONS[type] || TOAST_ICONS.info;
+    toastEl.innerHTML = `<div class="toast-content"><span class="toast-icon">${icon}</span><span class="toast-message">${message}</span><button class="toast-close" onclick="this.parentElement.parentElement.remove()">&times;</button></div>`;
+
     container.appendChild(toastEl);
     setTimeout(() => toastEl.parentElement && toastEl.remove(), duration);
 }
 
 /**
  * Shows a notification (production error handling style)
- * @param {string} message - Message to display (supports HTML)
- * @param {string} type - Type: 'info', 'success', 'error', 'warning'
- * @param {number} duration - Duration in milliseconds (default: 5000)
+ * @param message - Message to display (supports HTML)
+ * @param type - Type: 'info', 'success', 'error', 'warning'
+ * @param duration - Duration in milliseconds (default: 5000)
  */
-export function showNotification(message, type = 'info', duration = 5000) {
+export function showNotification(
+    message: string,
+    type: ToastType = 'info',
+    duration: number = 5000
+): void {
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
-    notification.innerHTML = message; // Changed to innerHTML to support HTML content
+    notification.innerHTML = message;
 
     // Add to DOM
     document.body.appendChild(notification);

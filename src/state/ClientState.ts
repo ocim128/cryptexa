@@ -13,16 +13,43 @@ import { showLoader, showHint, hideHint } from '../utils/dom.js';
 import { toast } from '../ui/toast.js';
 import { openNewPasswordDialog, openConfirmDialog, openDeletePasswordDialog } from '../ui/dialogs.js';
 
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Remote state from server */
+interface RemoteState {
+    isNew: boolean;
+    eContent: string | null;
+    currentHashContent: string | null;
+}
+
+/** Callbacks for UI updates */
+export interface ClientStateCallbacks {
+    onButtonEnablementChange?: (isTextModified: boolean, isNew: boolean) => void;
+    onStatusChange?: (status: string, text: string) => void;
+    onLastSavedUpdate?: () => void;
+    onFinishInitialization?: (shouldSkipSettingContent?: boolean) => void;
+    onDecryptAndFinish?: (isOld: boolean) => void;
+}
+
+/** Tab functions interface for dependency injection */
+export interface TabFunctions {
+    focusActiveTextarea?: () => void;
+    getContentFromTabs?: (state: ClientState) => Promise<string>;
+    setContentOfTabs?: (content: string, state: ClientState) => Promise<void>;
+}
+
 // Injected tab functions (set via setTabFunctions to avoid circular deps)
-let _focusActiveTextarea = () => { };
-let _getContentFromTabs = async () => "";
-let _setContentOfTabs = async () => { };
+let _focusActiveTextarea: () => void = () => { };
+let _getContentFromTabs: (state: ClientState) => Promise<string> = async () => "";
+let _setContentOfTabs: (content: string, state: ClientState) => Promise<void> = async () => { };
 
 /**
  * Injects tab-related functions to avoid circular dependencies
- * @param {Object} funcs - Object containing focusActiveTextarea, getContentFromTabs, setContentOfTabs
+ * @param funcs - Object containing focusActiveTextarea, getContentFromTabs, setContentOfTabs
  */
-export function setTabFunctions(funcs) {
+export function setTabFunctions(funcs: TabFunctions): void {
     if (funcs.focusActiveTextarea) _focusActiveTextarea = funcs.focusActiveTextarea;
     if (funcs.getContentFromTabs) _getContentFromTabs = funcs.getContentFromTabs;
     if (funcs.setContentOfTabs) _setContentOfTabs = funcs.setContentOfTabs;
@@ -33,43 +60,85 @@ export function setTabFunctions(funcs) {
  * Manages the entire application state
  */
 export class ClientState {
-    constructor(siteId, urlPassword = null) {
+    readonly site: string;
+    readonly urlPassword: string | null;
+    currentDBVersion: number;
+    expectedDBVersion: number;
+
+    siteHash: string | null;
+    isTextModified: boolean;
+    initHashContent: string | null;
+    content: string;
+    password: string;
+    initialIsNew: boolean;
+    mobileAppMetadataTabContent: string;
+
+    remote: RemoteState;
+
+    // Callbacks for UI updates
+    onButtonEnablementChange: ClientStateCallbacks['onButtonEnablementChange'];
+    onStatusChange: ClientStateCallbacks['onStatusChange'];
+    onLastSavedUpdate: ClientStateCallbacks['onLastSavedUpdate'];
+    onFinishInitialization: ClientStateCallbacks['onFinishInitialization'];
+    onDecryptAndFinish: ClientStateCallbacks['onDecryptAndFinish'];
+
+    constructor(siteId: string, urlPassword: string | null = null) {
         this.site = siteId;
         this.urlPassword = urlPassword;
         this.currentDBVersion = 2;
         this.expectedDBVersion = 2;
 
-        this.siteHash = null; // SHA512(site)
+        this.siteHash = null;
         this.isTextModified = false;
-        this.initHashContent = null;   // hash of initial decrypted content (from server's perspective)
-        this.content = ""; // joined tabs
-        this.password = ""; // user password
+        this.initHashContent = null;
+        this.content = "";
+        this.password = "";
         this.initialIsNew = true;
         this.mobileAppMetadataTabContent = "";
 
         this.remote = {
             isNew: true,
-            eContent: null,             // saltHex:ivHex:cipherHex
-            currentHashContent: null    // returned by server to enforce overwrite protection
+            eContent: null,
+            currentHashContent: null
         };
 
-        // Callbacks for UI updates
-        this.onButtonEnablementChange = null;
-        this.onStatusChange = null;
-        this.onLastSavedUpdate = null;
-        this.onFinishInitialization = null;
-        this.onDecryptAndFinish = null;
+        // Callbacks
+        this.onButtonEnablementChange = undefined;
+        this.onStatusChange = undefined;
+        this.onLastSavedUpdate = undefined;
+        this.onFinishInitialization = undefined;
+        this.onDecryptAndFinish = undefined;
     }
 
-    getIsNew() { return !!this.remote.isNew; }
-    getInitialIsNew() { return this.initialIsNew; }
-    getIsTextModified() { return this.isTextModified; }
-    getContent() { return this.content; }
-    getPassword() { return this.password; }
-    getMobileAppMetadataTabContent() { return this.mobileAppMetadataTabContent; }
-    setMobileAppMetadataTabContent(m) { this.mobileAppMetadataTabContent = m || ""; }
+    getIsNew(): boolean {
+        return !!this.remote.isNew;
+    }
 
-    updateIsTextModified(mod) {
+    getInitialIsNew(): boolean {
+        return this.initialIsNew;
+    }
+
+    getIsTextModified(): boolean {
+        return this.isTextModified;
+    }
+
+    getContent(): string {
+        return this.content;
+    }
+
+    getPassword(): string {
+        return this.password;
+    }
+
+    getMobileAppMetadataTabContent(): string {
+        return this.mobileAppMetadataTabContent;
+    }
+
+    setMobileAppMetadataTabContent(m: string): void {
+        this.mobileAppMetadataTabContent = m || "";
+    }
+
+    updateIsTextModified(mod: boolean): void {
         if (this.isTextModified === mod) return;
         this.isTextModified = mod;
         if (this.onButtonEnablementChange) {
@@ -77,36 +146,48 @@ export class ClientState {
         }
     }
 
-    async init() {
+    async init(): Promise<void> {
         this.siteHash = await sha512Hex(this.site);
         await this.reloadFromServer();
         this.initialIsNew = this.getIsNew();
     }
 
-    // Concurrency token (non-crypto) for overwrite detection. AES-GCM ensures confidentiality/integrity.
-    computeHashContentForDBVersion(contentForHash, passwordForHash, dbVersion) {
+    /**
+     * Concurrency token (non-crypto) for overwrite detection. 
+     * AES-GCM ensures confidentiality/integrity.
+     */
+    computeHashContentForDBVersion(
+        contentForHash: string,
+        passwordForHash: string,
+        dbVersion: number
+    ): string {
         const weak = simpleWeakHash(`${contentForHash}::${passwordForHash}`);
         return weak + String(dbVersion);
     }
 
-    setInitHashContent() {
-        // Initial hash equals the server's currentHashContent once we decrypted content or empty on new
+    setInitHashContent(): void {
         if (this.remote.currentHashContent) {
             this.initHashContent = this.remote.currentHashContent;
         } else {
-            // For new site, compute based on current blank content
-            this.initHashContent = this.computeHashContentForDBVersion(this.content, this.password || "", this.currentDBVersion);
+            this.initHashContent = this.computeHashContentForDBVersion(
+                this.content,
+                this.password || "",
+                this.currentDBVersion
+            );
         }
     }
 
-    async _getDecryptedContent(pass) {
+    private async _getDecryptedContent(pass: string): Promise<string | null> {
         if (!this.remote.eContent) return null;
         try {
             const parts = this.remote.eContent.split(":");
             if (parts.length !== 3) return null;
-            const [saltHex, ivHex, cipherHex] = parts;
+            const saltHex = parts[0];
+            const ivHex = parts[1];
+            const cipherHex = parts[2];
+            if (!saltHex || !ivHex || !cipherHex) return null;
             const plain = await aesGcmDecryptHex(ivHex, cipherHex, pass, saltHex);
-            if (plain && plain.endsWith(this.siteHash)) {
+            if (plain && this.siteHash && plain.endsWith(this.siteHash)) {
                 return plain;
             }
             return null;
@@ -115,10 +196,12 @@ export class ClientState {
         }
     }
 
-    // Try to decrypt using provided pass; returns true/false
-    async setLoginPasswordAndContentIfCorrect(pass) {
+    /**
+     * Try to decrypt using provided pass; returns true/false
+     */
+    async setLoginPasswordAndContentIfCorrect(pass: string): Promise<boolean> {
         const plain = await this._getDecryptedContent(pass);
-        if (plain !== null) {
+        if (plain !== null && this.siteHash) {
             this.content = plain.slice(0, plain.length - this.siteHash.length);
             this.password = pass;
             return true;
@@ -126,15 +209,23 @@ export class ClientState {
         return false;
     }
 
-    async saveSite(newPass) {
-        const executeSaveSite = async (passwordToUse) => {
+    async saveSite(newPass: boolean | string): Promise<void> {
+        const executeSaveSite = async (passwordToUse: string): Promise<void> => {
             this.content = await _getContentFromTabs(this);
 
-            const newHashContent = this.computeHashContentForDBVersion(this.content, passwordToUse, this.expectedDBVersion);
+            const newHashContent = this.computeHashContentForDBVersion(
+                this.content,
+                passwordToUse,
+                this.expectedDBVersion
+            );
 
             // Create new salt every save for portability; embed in ciphertext
             const saltHex = randomHex(16);
-            const { ivHex, cipherHex } = await aesGcmEncryptHex(String(this.content + this.siteHash), passwordToUse, saltHex);
+            const { ivHex, cipherHex } = await aesGcmEncryptHex(
+                String(this.content + this.siteHash),
+                passwordToUse,
+                saltHex
+            );
             const eContentPayload = `${saltHex}:${ivHex}:${cipherHex}`;
 
             showLoader(true);
@@ -154,13 +245,17 @@ export class ClientState {
                     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
                 }
 
-                const data = await res.json();
+                const data = await res.json() as {
+                    status: string;
+                    message?: string;
+                    currentHashContent?: string
+                };
+
                 if (data.status === "success") {
                     toast("Saved!", "success", 1500);
                     this.remote.isNew = false;
                     this.remote.eContent = eContentPayload;
                     this.remote.currentHashContent = data.currentHashContent || newHashContent;
-                    // Update initHashContent baseline to server-returned value
                     this.initHashContent = this.remote.currentHashContent;
                     this.password = passwordToUse;
                     this.currentDBVersion = this.expectedDBVersion;
@@ -182,11 +277,12 @@ export class ClientState {
             } catch (error) {
                 console.error('Save operation failed:', error);
                 let errorMessage = "Save failed!";
+                const err = error as Error;
 
-                if (error.name === 'AbortError') {
+                if (err.name === 'AbortError') {
                     errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
-                } else if (error.message.includes('HTTP')) {
-                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${error.message})</span>`;
+                } else if (err.message.includes('HTTP')) {
+                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
                 } else {
                     errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
                 }
@@ -201,13 +297,15 @@ export class ClientState {
         if (newPass === true) {
             openNewPasswordDialog({
                 title: this.getIsNew() ? "Create password" : "Change password",
-                onSave: async (pass1, pass2) => {
+                onSave: async (pass1: string, pass2: string): Promise<boolean> => {
                     if (pass1.length === 0) {
-                        showHint("#passwords-empty"); hideHint("#passwords-dont-match");
+                        showHint("#passwords-empty");
+                        hideHint("#passwords-dont-match");
                         return false;
                     }
                     if (pass1 !== pass2) {
-                        showHint("#passwords-dont-match"); hideHint("#passwords-empty");
+                        showHint("#passwords-dont-match");
+                        hideHint("#passwords-empty");
                         return false;
                     }
                     await executeSaveSite(pass1);
@@ -219,8 +317,8 @@ export class ClientState {
         }
     }
 
-    async deleteSite() {
-        const runDelete = async () => {
+    async deleteSite(): Promise<void> {
+        const runDelete = async (): Promise<void> => {
             showLoader(true);
             try {
                 const res = await fetchWithRetry("/api/delete", {
@@ -236,7 +334,7 @@ export class ClientState {
                     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
                 }
 
-                const data = await res.json();
+                const data = await res.json() as { status: string };
                 if (data.status === "success") {
                     toast("Site was deleted!", "success", 2000);
                     setTimeout(async () => {
@@ -253,11 +351,12 @@ export class ClientState {
             } catch (error) {
                 console.error('Delete operation failed:', error);
                 let errorMessage = "Deleting failed!";
+                const err = error as Error;
 
-                if (error.name === 'AbortError') {
+                if (err.name === 'AbortError') {
                     errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
-                } else if (error.message.includes('HTTP')) {
-                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${error.message})</span>`;
+                } else if (err.message.includes('HTTP')) {
+                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
                 } else {
                     errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
                 }
@@ -270,13 +369,12 @@ export class ClientState {
         };
 
         // First show confirmation dialog
-        openConfirmDialog("#dialog-confirm-delete-site", async (ok) => {
+        openConfirmDialog("#dialog-confirm-delete-site", async (ok: boolean) => {
             if (ok) {
                 // Then require password confirmation
                 openDeletePasswordDialog({
-                    onOk: async (enteredPassword) => {
+                    onOk: async (enteredPassword: string): Promise<boolean> => {
                         // For a new, unsaved site, there's no remote content.
-                        // The user might have set a password for saving, which is in this.password.
                         if (!this.remote.eContent) {
                             if (enteredPassword === this.password) {
                                 await runDelete();
@@ -299,22 +397,30 @@ export class ClientState {
         });
     }
 
-    async reloadFromServer() {
+    async reloadFromServer(): Promise<void> {
         const url = `/api/json?site=${encodeURIComponent(this.site)}`;
         const res = await fetch(url);
-        const data = await res.json();
+        const data = await res.json() as {
+            status: string;
+            isNew?: boolean;
+            eContent?: string;
+            currentDBVersion?: number;
+            expectedDBVersion?: number;
+            currentHashContent?: string;
+        };
+
         if (data.status !== "success") throw new Error("Server error");
+
         this.remote.isNew = !!data.isNew;
         this.remote.eContent = data.isNew ? null : data.eContent || null;
         this.currentDBVersion = data.currentDBVersion || 2;
         this.expectedDBVersion = data.expectedDBVersion || 2;
         this.remote.currentHashContent = data.currentHashContent || null;
-        // Set initHashContent baseline to server's current
         this.initHashContent = this.remote.currentHashContent || null;
     }
 
-    async reloadSite() {
-        const executeReload = async () => {
+    async reloadSite(): Promise<void> {
+        const executeReload = async (): Promise<void> => {
             showLoader(true);
             try {
                 await this.reloadFromServer();
@@ -324,10 +430,10 @@ export class ClientState {
 
                 if (this.remote.isNew || !this.remote.eContent) {
                     this.content = "";
-                    // If no site id (root path without /:site and no ?site), do not prompt for password; stay on landing
                     const pathSeg = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "");
                     const hasSiteFromPath = !!(pathSeg && pathSeg !== "api");
                     const hasSiteFromQuery = !!(new URL(window.location.href).searchParams.get("site"));
+
                     if (!hasSiteFromPath && !hasSiteFromQuery) {
                         await _setContentOfTabs("", this);
                         if (this.onFinishInitialization) this.onFinishInitialization();
@@ -359,7 +465,7 @@ export class ClientState {
         };
 
         if (this.isTextModified) {
-            openConfirmDialog("#dialog-confirm-reload", async (ok) => {
+            openConfirmDialog("#dialog-confirm-reload", async (ok: boolean) => {
                 if (ok) await executeReload();
                 else _focusActiveTextarea();
             });

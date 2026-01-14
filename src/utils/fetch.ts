@@ -5,13 +5,17 @@
 
 /**
  * Retry fetch with exponential backoff
- * @param {string} url - URL to fetch
- * @param {RequestInit} options - Fetch options
- * @param {number} maxRetries - Maximum number of retries (default: 3)
- * @returns {Promise<Response>}
+ * @param url - URL to fetch
+ * @param options - Fetch options
+ * @param maxRetries - Maximum number of retries (default: 3)
+ * @returns Promise resolving to Response
  */
-export async function fetchWithRetry(url, options = {}, maxRetries = 3) {
-    let lastError;
+export async function fetchWithRetry(
+    url: string,
+    options: RequestInit = {},
+    maxRetries: number = 3
+): Promise<Response> {
+    let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -27,10 +31,10 @@ export async function fetchWithRetry(url, options = {}, maxRetries = 3) {
             return response;
 
         } catch (error) {
-            lastError = error;
+            lastError = error as Error;
 
             // Don't retry on abort or non-network errors
-            if (error.name === 'AbortError' || attempt === maxRetries) {
+            if ((error as Error).name === 'AbortError' || attempt === maxRetries) {
                 throw error;
             }
 
@@ -45,14 +49,18 @@ export async function fetchWithRetry(url, options = {}, maxRetries = 3) {
 
 /**
  * Debounce function for performance
- * @param {Function} func - Function to debounce
- * @param {number} wait - Wait time in milliseconds
- * @returns {Function} - Debounced function
+ * @param func - Function to debounce
+ * @param wait - Wait time in milliseconds
+ * @returns Debounced function
  */
-export function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
+export function debounce<T extends (...args: Parameters<T>) => void>(
+    func: T,
+    wait: number
+): (...args: Parameters<T>) => void {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    return function executedFunction(...args: Parameters<T>): void {
+        const later = (): void => {
             clearTimeout(timeout);
             func(...args);
         };

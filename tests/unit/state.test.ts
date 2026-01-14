@@ -7,7 +7,23 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 // Simulated ClientState for testing (simplified version)
 class TestClientState {
-    constructor(siteId = 'test-site') {
+    site: string;
+    currentDBVersion: number;
+    expectedDBVersion: number;
+    siteHash: string | null;
+    isTextModified: boolean;
+    initHashContent: string | null;
+    content: string;
+    password: string;
+    initialIsNew: boolean;
+    mobileAppMetadataTabContent: string;
+    remote: {
+        isNew: boolean;
+        eContent: string | null;
+        currentHashContent: string | null;
+    };
+
+    constructor(siteId: string = 'test-site') {
         this.site = siteId;
         this.currentDBVersion = 2;
         this.expectedDBVersion = 2;
@@ -31,19 +47,19 @@ class TestClientState {
     getContent() { return this.content; }
     getPassword() { return this.password; }
     getMobileAppMetadataTabContent() { return this.mobileAppMetadataTabContent; }
-    setMobileAppMetadataTabContent(m) { this.mobileAppMetadataTabContent = m || ''; }
+    setMobileAppMetadataTabContent(m: string | null | undefined) { this.mobileAppMetadataTabContent = m || ''; }
 
-    updateIsTextModified(mod) {
+    updateIsTextModified(mod: boolean) {
         this.isTextModified = mod;
     }
 
-    computeHashContentForDBVersion(contentForHash, passwordForHash, dbVersion) {
+    computeHashContentForDBVersion(contentForHash: string, passwordForHash: string, dbVersion: number) {
         // Simplified hash computation for testing
         const weak = this._simpleWeakHash(`${contentForHash}::${passwordForHash}`);
         return weak + String(dbVersion);
     }
 
-    _simpleWeakHash(str) {
+    _simpleWeakHash(str: string) {
         let h1 = 0x811c9dc5, h2 = 0x1000193;
         for (let i = 0; i < str.length; i++) {
             const c = str.charCodeAt(i);
@@ -67,7 +83,7 @@ class TestClientState {
 }
 
 describe('ClientState', () => {
-    let state;
+    let state: TestClientState;
 
     beforeEach(() => {
         state = new TestClientState('test-site');
@@ -203,20 +219,20 @@ describe('ClientState', () => {
             state.setInitHashContent();
 
             expect(state.initHashContent).toBeDefined();
-            expect(state.initHashContent.length).toBeGreaterThan(0);
+            expect(state.initHashContent!.length).toBeGreaterThan(0);
         });
     });
 });
 
 describe('URL Parameter Parsing', () => {
     // Recreate URL parsing functions for testing
-    function getQueryParam(searchString, name) {
+    function getQueryParam(searchString: string, name: string): string | null {
         const url = new URL('http://example.com' + (searchString || ''));
         const v = url.searchParams.get(name);
         return v && v.trim().length ? v.trim() : null;
     }
 
-    function getSiteFromURL(pathname, searchString) {
+    function getSiteFromURL(pathname: string, searchString: string): string {
         const path = pathname || '/';
         const seg = path.replace(/^\/+|\/+$/g, '');
         if (seg && seg !== 'api') return seg;
@@ -224,7 +240,7 @@ describe('URL Parameter Parsing', () => {
         return qp || 'local-notes';
     }
 
-    function getURLPassword(searchString) {
+    function getURLPassword(searchString: string): string | null {
         const named = getQueryParam(searchString, 'password');
         if (named) return named;
         const qs = searchString || '';
