@@ -12,7 +12,7 @@ const path = require('path');
 
 // Configuration
 const BUILD_DIR = 'dist';
-const STATIC_FILES = ['index.html', 'styles.css', 'package.json', 'icon.png'];
+const STATIC_FILES = ['index.html', 'styles.css', 'kinetic.css', 'package.json', 'icon.png'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore'];
 const SRC_DIR = 'src';
 

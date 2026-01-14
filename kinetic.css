@@ -1,0 +1,782 @@
+/* ============================================
+   KINETIC GEOMETRY CSS
+   Mathematically Satisfying Motion System
+   ============================================ */
+
+:root {
+    /* Golden Ratio Timing */
+    --phi: 1.618;
+    --base-duration: 8s;
+    --orbit-slow: calc(var(--base-duration) * var(--phi) * var(--phi));
+    --orbit-medium: calc(var(--base-duration) * var(--phi));
+    --orbit-fast: var(--base-duration);
+
+    /* Easing Functions */
+    --ease-orbit: cubic-bezier(0.37, 0, 0.63, 1);
+    --ease-breathe: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+    --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Kinetic Colors (more visible) */
+    --kinetic-line: rgba(122, 162, 255, 0.35);
+    --kinetic-node: rgba(122, 162, 255, 0.5);
+    --kinetic-glow: rgba(122, 162, 255, 0.2);
+}
+
+.theme-light {
+    --kinetic-line: rgba(11, 114, 231, 0.25);
+    --kinetic-node: rgba(11, 114, 231, 0.4);
+    --kinetic-glow: rgba(11, 114, 231, 0.15);
+}
+
+/* ============================================
+   KINETIC BACKGROUND CONTAINER
+   ============================================ */
+
+.kinetic-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+}
+
+.kinetic-bg--landing {
+    z-index: 0;
+}
+
+/* ============================================
+   ORBITAL SYSTEM
+   Floating shapes in elliptical paths
+   ============================================ */
+
+.orbital-system {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.orbital-ring {
+    position: absolute;
+    border: 2px solid var(--kinetic-line);
+    border-radius: 50%;
+    animation: orbit-pulse var(--orbit-slow) var(--ease-breathe) infinite;
+}
+
+.orbital-ring--1 {
+    width: 200px;
+    height: 200px;
+    animation-delay: 0s;
+}
+
+.orbital-ring--2 {
+    width: 340px;
+    height: 340px;
+    animation-delay: calc(var(--base-duration) * 0.2);
+    transform: rotate(30deg);
+}
+
+.orbital-ring--3 {
+    width: 480px;
+    height: 480px;
+    animation-delay: calc(var(--base-duration) * 0.4);
+    transform: rotate(-15deg);
+}
+
+.orbital-ring--4 {
+    width: 620px;
+    height: 620px;
+    animation-delay: calc(var(--base-duration) * 0.6);
+    transform: rotate(45deg);
+}
+
+@keyframes orbit-pulse {
+
+    0%,
+    100% {
+        opacity: 0.5;
+        transform: scale(1) rotate(0deg);
+    }
+
+    50% {
+        opacity: 0.9;
+        transform: scale(1.03) rotate(180deg);
+    }
+}
+
+/* Orbiting Shapes */
+.orbiter {
+    position: absolute;
+    animation: orbit-path var(--orbit-medium) linear infinite;
+}
+
+.orbiter__shape {
+    width: 16px;
+    height: 16px;
+    background: var(--kinetic-node);
+    animation: shape-spin var(--orbit-fast) linear infinite;
+}
+
+.orbiter__shape--circle {
+    border-radius: 50%;
+}
+
+.orbiter__shape--triangle {
+    width: 0;
+    height: 0;
+    background: transparent;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 10px solid var(--kinetic-node);
+}
+
+.orbiter__shape--square {
+    border-radius: 2px;
+}
+
+.orbiter__shape--diamond {
+    transform: rotate(45deg);
+    border-radius: 2px;
+}
+
+.orbiter--1 {
+    --orbit-radius: 100px;
+    animation-duration: var(--orbit-fast);
+}
+
+.orbiter--2 {
+    --orbit-radius: 170px;
+    animation-duration: var(--orbit-medium);
+    animation-direction: reverse;
+}
+
+.orbiter--3 {
+    --orbit-radius: 240px;
+    animation-duration: var(--orbit-slow);
+}
+
+.orbiter--4 {
+    --orbit-radius: 310px;
+    animation-duration: calc(var(--orbit-slow) * 1.2);
+    animation-direction: reverse;
+}
+
+@keyframes orbit-path {
+    0% {
+        transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg);
+    }
+}
+
+@keyframes shape-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================
+   BREATHING GRID
+   Sacred geometry that expands/contracts
+   ============================================ */
+
+.breathing-grid {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.breathing-grid__layer {
+    position: absolute;
+    animation: breathe var(--orbit-slow) var(--ease-breathe) infinite;
+}
+
+.breathing-grid__hexagon {
+    width: 160px;
+    height: 92px;
+    background: transparent;
+    position: relative;
+}
+
+.breathing-grid__hexagon::before,
+.breathing-grid__hexagon::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    border-left: 80px solid transparent;
+    border-right: 80px solid transparent;
+}
+
+.breathing-grid__hexagon::before {
+    bottom: 100%;
+    border-bottom: 46px solid var(--kinetic-line);
+}
+
+.breathing-grid__hexagon::after {
+    top: 100%;
+    border-top: 46px solid var(--kinetic-line);
+}
+
+.breathing-grid__layer--1 {
+    animation-delay: 0s;
+}
+
+.breathing-grid__layer--2 {
+    animation-delay: calc(var(--base-duration) * 0.33);
+    transform: scale(1.6) rotate(30deg);
+}
+
+.breathing-grid__layer--3 {
+    animation-delay: calc(var(--base-duration) * 0.66);
+    transform: scale(2.2) rotate(60deg);
+}
+
+@keyframes breathe {
+
+    0%,
+    100% {
+        opacity: 0.15;
+        transform: scale(1) rotate(0deg);
+    }
+
+    25% {
+        opacity: 0.25;
+    }
+
+    50% {
+        opacity: 0.15;
+        transform: scale(1.08) rotate(60deg);
+    }
+
+    75% {
+        opacity: 0.25;
+    }
+}
+
+/* ============================================
+   PENDULUM WAVE LOADER
+   Mesmerizing loading animation
+   ============================================ */
+
+.pendulum-loader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 6px;
+    height: 60px;
+    padding-top: 10px;
+}
+
+.pendulum {
+    width: 2px;
+    height: 40px;
+    background: linear-gradient(to bottom, var(--kinetic-line), transparent);
+    position: relative;
+    transform-origin: top center;
+    animation: pendulum-swing 1.5s var(--ease-orbit) infinite;
+}
+
+.pendulum::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 10px;
+    height: 10px;
+    background: var(--kinetic-node);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--kinetic-glow);
+}
+
+/* Each pendulum has slightly different period for wave effect */
+.pendulum:nth-child(1) {
+    animation-duration: 1.4s;
+}
+
+.pendulum:nth-child(2) {
+    animation-duration: 1.45s;
+}
+
+.pendulum:nth-child(3) {
+    animation-duration: 1.5s;
+}
+
+.pendulum:nth-child(4) {
+    animation-duration: 1.55s;
+}
+
+.pendulum:nth-child(5) {
+    animation-duration: 1.6s;
+}
+
+.pendulum:nth-child(6) {
+    animation-duration: 1.65s;
+}
+
+.pendulum:nth-child(7) {
+    animation-duration: 1.7s;
+}
+
+.pendulum:nth-child(8) {
+    animation-duration: 1.75s;
+}
+
+.pendulum:nth-child(9) {
+    animation-duration: 1.8s;
+}
+
+@keyframes pendulum-swing {
+
+    0%,
+    100% {
+        transform: rotate(-30deg);
+    }
+
+    50% {
+        transform: rotate(30deg);
+    }
+}
+
+/* ============================================
+   HARMONIC OSCILLATOR SPINNER
+   Wave-based loading circles
+   ============================================ */
+
+.harmonic-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 40px;
+}
+
+.harmonic-dot {
+    width: 10px;
+    height: 10px;
+    background: var(--kinetic-node);
+    border-radius: 50%;
+    animation: harmonic-bounce 1.2s var(--ease-orbit) infinite;
+}
+
+.harmonic-dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.harmonic-dot:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.harmonic-dot:nth-child(3) {
+    animation-delay: 0.2s;
+}
+
+.harmonic-dot:nth-child(4) {
+    animation-delay: 0.3s;
+}
+
+.harmonic-dot:nth-child(5) {
+    animation-delay: 0.4s;
+}
+
+@keyframes harmonic-bounce {
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.4;
+    }
+
+    50% {
+        transform: translateY(-16px) scale(1.2);
+        opacity: 1;
+    }
+}
+
+/* ============================================
+   GEAR SYSTEM
+   Interlocking rotating gears
+   ============================================ */
+
+.gear-system {
+    position: relative;
+    width: 120px;
+    height: 120px;
+}
+
+.gear {
+    position: absolute;
+    border: 3px solid var(--kinetic-node);
+    border-radius: 50%;
+    animation: gear-rotate var(--orbit-fast) linear infinite;
+}
+
+.gear::before {
+    content: '';
+    position: absolute;
+    inset: 25%;
+    border: 2px solid var(--kinetic-line);
+    border-radius: 50%;
+}
+
+.gear--1 {
+    width: 60px;
+    height: 60px;
+    top: 0;
+    left: 0;
+}
+
+.gear--2 {
+    width: 50px;
+    height: 50px;
+    top: 10px;
+    right: 10px;
+    animation-direction: reverse;
+    animation-duration: calc(var(--orbit-fast) * 0.833);
+}
+
+.gear--3 {
+    width: 40px;
+    height: 40px;
+    bottom: 10px;
+    left: 30px;
+    animation-duration: calc(var(--orbit-fast) * 0.667);
+}
+
+@keyframes gear-rotate {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================
+   LISSAJOUS CANVAS
+   For complex mathematical curves
+   ============================================ */
+
+.lissajous-canvas {
+    position: absolute;
+    inset: 0;
+    opacity: 0.5;
+}
+
+/* ============================================
+   KINETIC DIALOG TRANSITIONS
+   ============================================ */
+
+.app-dialog[open] {
+    animation: dialog-kinetic-in 0.4s var(--ease-bounce) forwards;
+}
+
+@keyframes dialog-kinetic-in {
+    0% {
+        opacity: 0;
+        transform: scale(0.9) rotate(-2deg);
+    }
+
+    60% {
+        transform: scale(1.02) rotate(0.5deg);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+    }
+}
+
+/* ============================================
+   DIALOG KINETIC DECORATIONS
+   Password dialog geometric effects
+   ============================================ */
+
+.app-dialog--kinetic {
+    overflow: visible;
+}
+
+.dialog-kinetic-bg {
+    position: absolute;
+    inset: -60px;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.dialog-orbit-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--kinetic-line);
+    border-radius: 50%;
+    animation: dialog-orbit-pulse 6s var(--ease-breathe) infinite;
+}
+
+.dialog-orbit-ring--1 {
+    width: 320px;
+    height: 320px;
+    animation-delay: 0s;
+}
+
+.dialog-orbit-ring--2 {
+    width: 400px;
+    height: 400px;
+    animation-delay: 2s;
+    border-style: dashed;
+}
+
+.dialog-orbit-ring--3 {
+    width: 480px;
+    height: 480px;
+    animation-delay: 4s;
+    border-style: dotted;
+}
+
+@keyframes dialog-orbit-pulse {
+
+    0%,
+    100% {
+        opacity: 0.4;
+        transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: translate(-50%, -50%) scale(1.05) rotate(180deg);
+    }
+}
+
+/* Orbiting shapes */
+.dialog-orbiter {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    animation: dialog-orbit-path 8s linear infinite;
+}
+
+.dialog-orbiter--1 {
+    --orbit-radius: 180px;
+    animation-duration: 10s;
+}
+
+.dialog-orbiter--2 {
+    --orbit-radius: 220px;
+    animation-duration: 14s;
+    animation-direction: reverse;
+}
+
+.dialog-orbiter__shape {
+    width: 12px;
+    height: 12px;
+    background: var(--kinetic-node);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--kinetic-glow), 0 0 24px var(--kinetic-glow);
+    animation: dialog-shape-glow 2s var(--ease-breathe) infinite;
+}
+
+@keyframes dialog-orbit-path {
+    0% {
+        transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg);
+    }
+}
+
+@keyframes dialog-shape-glow {
+
+    0%,
+    100% {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.3);
+    }
+}
+
+/* Dialog icon animation */
+.dialog-icon {
+    text-align: center;
+    font-size: 48px;
+    margin-bottom: 16px;
+    animation: dialog-icon-float 3s var(--ease-breathe) infinite;
+}
+
+@keyframes dialog-icon-float {
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+
+    50% {
+        transform: translateY(-8px) scale(1.05);
+    }
+}
+
+/* ============================================
+   KINETIC BUTTON INTERACTIONS
+   ============================================ */
+
+.kinetic-ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--kinetic-glow);
+    transform: scale(0);
+    animation: ripple-expand 0.6s var(--ease-orbit) forwards;
+    pointer-events: none;
+}
+
+@keyframes ripple-expand {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(4);
+        opacity: 0;
+    }
+}
+
+/* ============================================
+   TAB KINETIC TRANSITIONS  
+   ============================================ */
+
+.tab-panel {
+    animation: tab-enter 0.3s var(--ease-bounce) forwards;
+}
+
+@keyframes tab-enter {
+    0% {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ============================================
+   FLOATING PARTICLES
+   Subtle background movement
+   ============================================ */
+
+.particle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: var(--kinetic-node);
+    border-radius: 50%;
+    animation: float-drift 20s linear infinite;
+    opacity: 0.5;
+}
+
+@keyframes float-drift {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    25% {
+        transform: translate(50px, -30px) rotate(90deg);
+    }
+
+    50% {
+        transform: translate(20px, -60px) rotate(180deg);
+    }
+
+    75% {
+        transform: translate(-30px, -30px) rotate(270deg);
+    }
+
+    100% {
+        transform: translate(0, 0) rotate(360deg);
+    }
+}
+
+/* ============================================
+   CONNECTION LINES (for grid)
+   ============================================ */
+
+.connection-line {
+    position: absolute;
+    height: 1px;
+    background: linear-gradient(90deg,
+            transparent,
+            var(--kinetic-line),
+            transparent);
+    animation: line-pulse 3s var(--ease-breathe) infinite;
+}
+
+@keyframes line-pulse {
+
+    0%,
+    100% {
+        opacity: 0.2;
+        transform: scaleX(1);
+    }
+
+    50% {
+        opacity: 0.5;
+        transform: scaleX(1.05);
+    }
+}
+
+/* ============================================
+   ACCESSIBILITY: Reduced Motion
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+
+    .orbital-ring,
+    .orbiter,
+    .orbiter__shape,
+    .breathing-grid__layer,
+    .pendulum,
+    .harmonic-dot,
+    .gear,
+    .particle,
+    .connection-line,
+    .kinetic-ripple,
+    .dialog-orbit-ring,
+    .dialog-orbiter,
+    .dialog-orbiter__shape,
+    .dialog-icon {
+        animation: none !important;
+    }
+
+    .app-dialog[open] {
+        animation: fade-in 0.2s ease forwards !important;
+    }
+
+    @keyframes fade-in {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    .tab-panel {
+        animation: none !important;
+    }
+}

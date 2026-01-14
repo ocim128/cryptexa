@@ -27,6 +27,7 @@ import { qs, qsa, on, setPasswordMode } from './utils/dom.js';
 import { toast, showNotification } from './ui/toast.js';
 import { openPasswordDialog, openConfirmDialog } from './ui/dialogs.js';
 import { initTheme, wireThemeToggle } from './ui/themes.js';
+import { initKineticBackground, initKineticButtons, replaceLoaderWithKinetic } from './ui/kinetic.js';
 import {
     initTabsLayout,
     activateTab,
@@ -784,6 +785,16 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     wireThemeToggle();
     initKeyboardShortcuts();
+
+    // Initialize kinetic geometry animations
+    const path = window.location.pathname || "/";
+    const seg = path.replace(/^\/+|\/+$/g, "");
+    const qp = new URL(window.location.href).searchParams.get("site");
+    const isLanding = !((seg && seg !== "api") || qp);
+
+    initKineticBackground(isLanding);
+    initKineticButtons();
+    replaceLoaderWithKinetic();
 
     // Global color picker functionality
     const globalColorPicker = document.getElementById('tab-color-picker') as HTMLInputElement;

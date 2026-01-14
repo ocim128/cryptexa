@@ -1,28 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Cryptexa - Your secure digital diary where thoughts go to hide from the world" />
   <meta name="robots" content="noindex, nofollow" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Cryptexa</title>
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="shortcut icon" type="image/png" href="icon.png" />
   <script>
-  // Early theme application to avoid flash; default to light, honor stored pref
-  (function(){
-    try{
-      var pref = localStorage.getItem('theme-preference');
-      var theme = pref || 'light';
-      var c = document.documentElement.classList;
-      c.remove('theme-dark','theme-light');
-      c.add(theme === 'light' ? 'theme-light' : 'theme-dark');
-    }catch(e){}
-  })();
+    // Early theme application to avoid flash; default to light, honor stored pref
+    (function () {
+      try {
+        var pref = localStorage.getItem('theme-preference');
+        var theme = pref || 'light';
+        var c = document.documentElement.classList;
+        c.remove('theme-dark', 'theme-light');
+        c.add(theme === 'light' ? 'theme-light' : 'theme-dark');
+      } catch (e) { }
+    })();
   </script>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./kinetic.css" />
   <style>
     /* Modern, sleek landing page styles */
     .landing {
@@ -38,6 +41,7 @@
       position: relative;
       overflow: hidden;
     }
+
     .landing::before {
       content: '';
       position: absolute;
@@ -48,6 +52,7 @@
       background: var(--gradient-brand);
       border-radius: 24px 24px 0 0;
     }
+
     .landing::after {
       content: '';
       position: absolute;
@@ -59,10 +64,12 @@
       pointer-events: none;
       z-index: 0;
     }
-    .landing > * {
+
+    .landing>* {
       position: relative;
       z-index: 1;
     }
+
     .landing .logo {
       width: 80px;
       height: 80px;
@@ -74,10 +81,19 @@
       background: var(--panel-2);
       padding: 8px;
     }
+
     @keyframes float {
-      0%, 100% { transform: translateY(0px) scale(1); }
-      50% { transform: translateY(-10px) scale(1.02); }
+
+      0%,
+      100% {
+        transform: translateY(0px) scale(1);
+      }
+
+      50% {
+        transform: translateY(-10px) scale(1.02);
+      }
     }
+
     .landing h1 {
       margin: 0 0 16px 0;
       color: var(--text);
@@ -89,6 +105,7 @@
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
+
     .landing .subtitle {
       color: var(--muted);
       font-size: 18px;
@@ -97,18 +114,21 @@
       opacity: 0.9;
       line-height: 1.4;
     }
+
     .landing p {
       color: var(--muted);
       margin: 0 0 40px 0;
       font-size: 16px;
       line-height: 1.6;
     }
+
     .landing .input-group {
       display: flex;
       gap: 16px;
       margin-bottom: 32px;
       align-items: stretch;
     }
+
     .landing input[type="text"] {
       flex: 1;
       padding: 18px 24px;
@@ -120,15 +140,18 @@
       transition: all 0.3s ease;
       outline: none;
     }
+
     .landing input[type="text"]:focus {
       border-color: var(--brand);
       box-shadow: 0 0 0 6px rgba(122, 162, 255, 0.1);
       transform: translateY(-2px);
     }
+
     .landing input[type="text"]::placeholder {
       color: var(--muted);
       opacity: 0.7;
     }
+
     .landing button {
       padding: 18px 32px;
       border-radius: 16px;
@@ -143,6 +166,7 @@
       position: relative;
       overflow: hidden;
     }
+
     .landing button::before {
       content: '';
       position: absolute;
@@ -150,19 +174,23 @@
       left: -100%;
       width: 100%;
       height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
       transition: left 0.5s;
     }
+
     .landing button:hover::before {
       left: 100%;
     }
+
     .landing button:hover {
       transform: translateY(-3px);
       box-shadow: 0 12px 32px rgba(122, 162, 255, 0.4);
     }
+
     .landing button:active {
       transform: translateY(-1px);
     }
+
     .landing .footer-text {
       font-size: 14px;
       color: var(--muted);
@@ -174,6 +202,7 @@
       border-radius: 16px;
       border: 1px solid var(--border);
     }
+
     .landing .footer-text code {
       background: var(--bg);
       padding: 4px 8px;
@@ -182,11 +211,30 @@
       font-size: 13px;
       border: 1px solid var(--border);
     }
+
     /* Theme toggle minimal styling to integrate into menubar */
-    .theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;box-shadow:var(--shadow-sm)}
-    .theme-toggle .icon{width:18px;height:18px;display:inline-block;line-height:1}
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      box-shadow: var(--shadow-sm)
+    }
+
+    .theme-toggle .icon {
+      width: 18px;
+      height: 18px;
+      display: inline-block;
+      line-height: 1
+    }
   </style>
 </head>
+
 <body>
   <div id="menubar">
     <div id="brand">Cryptexa</div>
@@ -198,17 +246,19 @@
       <!-- Tab Color Picker -->
       <input type="color" id="tab-color-picker" value="#ffffff" title="Set active tab color">
       <!-- Help Button -->
-      <button id="help-button" title="Keyboard Shortcuts (F1)" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;">❓</button>
+      <button id="help-button" title="Keyboard Shortcuts (F1)"
+        style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;">❓</button>
       <!-- Theme Toggle -->
-      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle color theme" aria-live="polite" aria-pressed="true">
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle color theme" aria-live="polite"
+        aria-pressed="true">
         <span class="icon" aria-hidden="true">🌙</span>
         <span class="label">Dark</span>
       </button>
       <div id="status-indicator" class="status-indicator">
-          <span class="status-dot"></span>
-          <span class="status-text">Ready</span>
-          <span id="last-saved" class="last-saved" style="display: none;"></span>
-        </div>
+        <span class="status-dot"></span>
+        <span class="status-text">Ready</span>
+        <span id="last-saved" class="last-saved" style="display: none;"></span>
+      </div>
 
     </div>
   </div>
@@ -218,14 +268,17 @@
     <img src="icon.png" alt="Cryptexa Logo" class="logo" />
     <h1>Cryptexa</h1>
     <p class="subtitle">Where your secrets go to party (privately)</p>
-    <p>Give your digital diary a name that's more creative than "diary123". Your thoughts deserve a VIP lounge, not a cardboard box under your bed.</p>
+    <p>Give your digital diary a name that's more creative than "diary123". Your thoughts deserve a VIP lounge, not a
+      cardboard box under your bed.</p>
     <div class="input-group">
       <input type="text" id="landing-site" placeholder="definitely-not-my-diary" />
       <button id="landing-open">Go 🚀</button>
     </div>
     <div class="footer-text">
-      <strong>🔒 Fort Knox wishes it was this secure:</strong> We encrypt everything so hard, even we can't peek at your embarrassing poetry. AES-256-GCM because we're fancy like that.<br>
-      <strong>🚀 Pro hacker move:</strong> Add <code>?password=yourpass</code> to skip the small talk (but please don't use "password123" - we're judging you).
+      <strong>🔒 Fort Knox wishes it was this secure:</strong> We encrypt everything so hard, even we can't peek at your
+      embarrassing poetry. AES-256-GCM because we're fancy like that.<br>
+      <strong>🚀 Pro hacker move:</strong> Add <code>?password=yourpass</code> to skip the small talk (but please don't
+      use "password123" - we're judging you).
     </div>
   </section>
 
@@ -249,15 +302,30 @@
     </div>
   </div>
 
-  <div id="outer-toast" style="display:none;"><div id="toast"></div></div>
+  <div id="outer-toast" style="display:none;">
+    <div id="toast"></div>
+  </div>
 
   <div id="loader" class="loader" style="display:none;">
     <div class="spinner"></div>
   </div>
 
   <!-- Dialogs -->
-  <dialog id="dialog-password" class="app-dialog">
+  <dialog id="dialog-password" class="app-dialog app-dialog--kinetic">
+    <!-- Kinetic decoration -->
+    <div class="dialog-kinetic-bg">
+      <div class="dialog-orbit-ring dialog-orbit-ring--1"></div>
+      <div class="dialog-orbit-ring dialog-orbit-ring--2"></div>
+      <div class="dialog-orbit-ring dialog-orbit-ring--3"></div>
+      <div class="dialog-orbiter dialog-orbiter--1">
+        <div class="dialog-orbiter__shape"></div>
+      </div>
+      <div class="dialog-orbiter dialog-orbiter--2">
+        <div class="dialog-orbiter__shape"></div>
+      </div>
+    </div>
     <form method="dialog">
+      <div class="dialog-icon">🔐</div>
       <h3>Decrypt this site</h3>
       <p class="additional-text">Enter your password to decrypt notes.</p>
       <input type="password" id="enterpassword" placeholder="Password" autocomplete="current-password" />
@@ -334,7 +402,8 @@
       <p>A secure, client-side encrypted notes application.</p>
       <p><strong>Version:</strong> 1.0.0</p>
       <p><strong>Encryption:</strong> AES-256-GCM</p>
-      <p>Your notes are encrypted in your browser before being sent to the server. The server never sees your password or unencrypted content.</p>
+      <p>Your notes are encrypted in your browser before being sent to the server. The server never sees your password
+        or unencrypted content.</p>
       <menu>
         <button type="button" class="secondary" onclick="showKeyboardShortcuts()">Keyboard Shortcuts</button>
         <button type="button" class="secondary">Close</button>
@@ -408,8 +477,8 @@
 
   <script>
     // Landing behavior: if no ?site and no path segment, show landing and hide editor area
-    (function(){
-      function getParam(n){const u=new URL(window.location.href);const v=u.searchParams.get(n);return v&&v.trim().length?v.trim():null;}
+    (function () {
+      function getParam(n) { const u = new URL(window.location.href); const v = u.searchParams.get(n); return v && v.trim().length ? v.trim() : null; }
       function getSiteFromURL() {
         const path = window.location.pathname || "/";
         const seg = path.replace(/^\/+|\/+$/g, "");
@@ -422,17 +491,17 @@
       const main = document.getElementById("main-content-outter");
       const menubar = document.getElementById("menubar");
       const menubarBtns = document.getElementById("menubar-buttons");
-      if(!site){
+      if (!site) {
         landing.style.display = "block";
         main.style.display = "none";
         menubar.style.display = "none";
         // Disable editor buttons on landing
-        Array.from(menubarBtns.querySelectorAll("button")).forEach(b=>b.disabled=true);
+        Array.from(menubarBtns.querySelectorAll("button")).forEach(b => b.disabled = true);
         const input = document.getElementById("landing-site");
         const openBtn = document.getElementById("landing-open");
-        openBtn.addEventListener("click", ()=>{
+        openBtn.addEventListener("click", () => {
           const val = (input.value || "").trim();
-          if(!val){ alert("Please enter a site name"); return; }
+          if (!val) { alert("Please enter a site name"); return; }
           const pw = getParam("password");
           // Navigate to pretty URL /:site with optional ?password (raw) or ?password=...
           let dest = window.location.origin + "/" + encodeURIComponent(val);
@@ -451,10 +520,11 @@
     })();
   </script>
 
-  <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./app.js"></script>
 
   <!-- Toast Notifications -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
 </body>
+
 </html>
