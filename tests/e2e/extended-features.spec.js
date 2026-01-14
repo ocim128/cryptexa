@@ -185,9 +185,8 @@ test.describe('Editor Features', () => {
         await textarea.fill('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
         // Gutter should have line numbers
-        const gutterContent = await gutter.getAttribute('data-lines');
-        expect(gutterContent).toContain('1');
-        expect(gutterContent).toContain('5');
+        // Gutter should have line numbers - use auto-retrying assertion to handle update delay
+        await expect(gutter).toHaveAttribute('data-lines', /1[\s\S]*5/);
     });
 
     test('should show placeholder when empty', async ({ page }) => {

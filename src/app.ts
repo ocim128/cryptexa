@@ -30,6 +30,7 @@ import { initTheme, wireThemeToggle } from './ui/themes.js';
 import { initKineticBackground, initKineticButtons, replaceLoaderWithKinetic } from './ui/kinetic.js';
 import { initGlobalSearch, openSearch } from './ui/search.js';
 import { initPasswordStrengthIndicators } from './ui/password-strength.js';
+import { initTabSwitcher, setTabModified, clearAllModified } from './ui/tab-switcher.js';
 import {
     initTabsLayout,
     activateTab,
@@ -81,7 +82,7 @@ function getQueryParam(name: string): string | null {
 function getSiteFromURL(): string {
     const path = window.location.pathname || "/";
     // Normalize: remove leading/trailing slashes
-    const seg = path.replace(/^\/+|\/+$/g, "");
+    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
     if (seg && seg !== "api") return seg;
     const qp = getQueryParam("site");
     return qp || "local-notes";
@@ -213,6 +214,7 @@ function showKeyboardShortcutsHelp(): void {
     const shortcuts = [
         { keys: 'Ctrl+S', desc: 'Save notes' },
         { keys: 'Ctrl+Alt+T', desc: 'New tab' },
+        { keys: 'Ctrl+P', desc: 'Quick tab switcher' },
         { keys: 'Ctrl+R', desc: 'Reload from server' },
         { keys: 'Ctrl+Shift+F', desc: 'Global search' },
         { keys: 'Ctrl+1-9', desc: 'Switch to tab by number' },
@@ -283,6 +285,8 @@ export function stopHealthMonitoring(): void {
         healthCheckInterval = null;
     }
 }
+// Expose for manual debugging
+(window as any).stopHealthMonitoring = stopHealthMonitoring;
 
 // ============================================================================
 // BUTTON ENABLEMENT
@@ -338,11 +342,21 @@ const hideLastSaved = (): void => {
     }
 };
 
-// Listen for text changes to update status
+// Listen for text changes to update status and per-tab modification
 document.addEventListener("input", e => {
     if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
         updateStatusIndicator("modified", "Modified");
         hideLastSaved();
+
+        // Mark the current tab as modified
+        const panel = e.target.closest('.tab-panel');
+        if (panel) {
+            const tabId = panel.id;
+            const header = document.querySelector<HTMLElement>(`.tab-header[data-tab-id="${tabId}"]`);
+            if (header) {
+                setTabModified(header, true);
+            }
+        }
     }
 });
 
@@ -375,6 +389,9 @@ async function finishInitialization(shouldSkipSettingContent?: boolean): Promise
     ignoreInputEvent = true;
     if (shouldSkipSettingContent !== true) {
         setContentOfTabs(state.getContent(), state);
+    } else {
+        // This is called after a successful save - clear per-tab modification indicators
+        clearAllModified();
     }
     setTimeout(() => { ignoreInputEvent = false; }, 50);
 
@@ -386,7 +403,9 @@ async function finishInitialization(shouldSkipSettingContent?: boolean): Promise
             const isHuge = (ta.value && ta.value.length > 50000);
             if (panel) panel.dataset.huge = isHuge ? "1" : "";
         }
-    } catch { /* ignore */ }
+    } catch {
+        void 0;
+    }
 }
 
 function decryptContentAndFinishInitialization(isOld: boolean): void {
@@ -459,7 +478,7 @@ document.getElementById("dec").onclick=async()=>{
     document.getElementById("out").textContent="Decryption failed (wrong password?)";
   }
 };
-</script>
+<${'/'}script>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -499,7 +518,9 @@ function wireEvents(): void {
                 if (!isHuge && start <= 201 && currentTabTitle) {
                     currentTabTitle.textContent = getTitleFromContent(ta.value.substring(0, 200));
                 }
-            } catch { /* ignore */ }
+            } catch {
+                void 0;
+            }
 
             // Gutter update throttling for large notes: avoid per-keystroke full regen
             const panel = ta.closest(".tab-panel") as HTMLElement;
@@ -758,7 +779,7 @@ function setupKeyboardShortcuts(): void {
     // Defer heavy initialization to next frame to improve FCP
     requestAnimationFrame(async () => {
         const path = window.location.pathname || "/";
-        const seg = path.replace(/^\/+|\/+$/g, "");
+        const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
         const qp = getQueryParam("site");
         const hasSiteId = (seg && seg !== "api") || qp;
 
@@ -792,10 +813,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize new features
     initGlobalSearch();
     initPasswordStrengthIndicators();
+    initTabSwitcher();
 
     // Initialize kinetic geometry animations
     const path = window.location.pathname || "/";
-    const seg = path.replace(/^\/+|\/+$/g, "");
+    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
     const qp = new URL(window.location.href).searchParams.get("site");
     const isLanding = !((seg && seg !== "api") || qp);
 

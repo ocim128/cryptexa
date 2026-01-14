@@ -38,7 +38,7 @@ export function store(theme: ThemePreference): void {
     try {
         localStorage.setItem(STORAGE_KEY, theme);
     } catch {
-        /* ignore storage errors */
+        void 0;
     }
 }
 

@@ -1421,6 +1421,300 @@
     }
   }
 
+  // src/ui/tab-switcher.ts
+  var switcherDialog = null;
+  var isInitialized = false;
+  function fuzzyMatch(query, text) {
+    const queryLower = query.toLowerCase();
+    const textLower = text.toLowerCase();
+    if (textLower === queryLower) return 1e3;
+    if (textLower.startsWith(queryLower)) return 500 + (100 - text.length);
+    if (textLower.includes(queryLower)) return 200 + (100 - textLower.indexOf(queryLower));
+    let queryIndex = 0;
+    let score = 0;
+    let lastMatchIndex = -1;
+    for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
+      if (textLower[i] === queryLower[queryIndex]) {
+        if (lastMatchIndex === i - 1) {
+          score += 5;
+        } else {
+          score += 1;
+        }
+        lastMatchIndex = i;
+        queryIndex++;
+      }
+    }
+    if (queryIndex !== queryLower.length) return -1;
+    return score;
+  }
+  function highlightMatch2(query, text) {
+    if (!query) return escapeHtml2(text);
+    const queryLower = query.toLowerCase();
+    const textLower = text.toLowerCase();
+    let result = "";
+    let queryIndex = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i] || "";
+      const charLower = textLower[i] || "";
+      const queryChar = queryLower[queryIndex] || "";
+      if (queryIndex < queryLower.length && charLower === queryChar) {
+        result += `<mark>${escapeHtml2(char)}</mark>`;
+        queryIndex++;
+      } else {
+        result += escapeHtml2(char);
+      }
+    }
+    return result;
+  }
+  function escapeHtml2(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function getAllTabs() {
+    const headers = qsa(".tab-header");
+    const tabs = [];
+    headers.forEach((header, index) => {
+      const id = header.dataset.tabId || "";
+      const titleEl = header.querySelector(".tab-title");
+      const title = titleEl?.textContent || "Empty Tab";
+      const isPinned = header.classList.contains("pinned");
+      const isModified = header.classList.contains("modified");
+      const panel = id ? qs(`#${id}`) : null;
+      const textarea = panel?.querySelector(".textarea-contents");
+      const content = textarea?.value?.substring(0, 200) || "";
+      tabs.push({
+        header,
+        id,
+        title,
+        content,
+        isPinned,
+        isModified,
+        index
+      });
+    });
+    return tabs;
+  }
+  function ensureSwitcherDialog() {
+    if (switcherDialog) return switcherDialog;
+    const dialog = document.createElement("dialog");
+    dialog.id = "tab-switcher-dialog";
+    dialog.className = "tab-switcher-dialog";
+    dialog.innerHTML = `
+        <div class="tab-switcher-container">
+            <div class="tab-switcher-header">
+                <input type="text" 
+                       id="tab-switcher-input" 
+                       class="tab-switcher-input" 
+                       placeholder="Search tabs... (\u2191\u2193 to navigate, Enter to select)"
+                       autocomplete="off" />
+                <kbd class="tab-switcher-hint">Esc to close</kbd>
+            </div>
+            <div class="tab-switcher-list" id="tab-switcher-list">
+                <!-- Tab items rendered here -->
+            </div>
+            <div class="tab-switcher-footer">
+                <span class="tab-switcher-stat" id="tab-switcher-stat">0 tabs</span>
+                <div class="tab-switcher-shortcuts">
+                    <span><kbd>\u2191</kbd><kbd>\u2193</kbd> Navigate</span>
+                    <span><kbd>Enter</kbd> Select</span>
+                    <span><kbd>Ctrl+P</kbd> Pin/Unpin</span>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    switcherDialog = dialog;
+    const input = dialog.querySelector("#tab-switcher-input");
+    const list = dialog.querySelector("#tab-switcher-list");
+    input.addEventListener("input", () => {
+      renderTabList(input.value);
+    });
+    input.addEventListener("keydown", (e) => {
+      const items = list.querySelectorAll(".tab-switcher-item");
+      const activeItem = list.querySelector(".tab-switcher-item.active");
+      const activeIndex = activeItem ? Array.from(items).indexOf(activeItem) : -1;
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          if (items.length > 0) {
+            const nextIndex = (activeIndex + 1) % items.length;
+            items.forEach((item, i) => item.classList.toggle("active", i === nextIndex));
+            items[nextIndex]?.scrollIntoView({ block: "nearest" });
+          }
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          if (items.length > 0) {
+            const prevIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+            items.forEach((item, i) => item.classList.toggle("active", i === prevIndex));
+            items[prevIndex]?.scrollIntoView({ block: "nearest" });
+          }
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (activeItem) {
+            const tabId = activeItem.dataset.tabId;
+            const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
+            if (header) {
+              activateTab(header);
+              closeSwitcher();
+            }
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          closeSwitcher();
+          break;
+        case "p":
+        case "P":
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (activeItem) {
+              const tabId = activeItem.dataset.tabId;
+              const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
+              if (header) {
+                togglePinTab(header);
+                renderTabList(input.value);
+              }
+            }
+          }
+          break;
+      }
+    });
+    list.addEventListener("click", (e) => {
+      const item = e.target.closest(".tab-switcher-item");
+      if (item) {
+        const tabId = item.dataset.tabId;
+        const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
+        if (header) {
+          activateTab(header);
+          closeSwitcher();
+        }
+      }
+    });
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) {
+        closeSwitcher();
+      }
+    });
+    return dialog;
+  }
+  function renderTabList(query = "") {
+    const list = qs("#tab-switcher-list");
+    const stat = qs("#tab-switcher-stat");
+    if (!list) return;
+    let tabs = getAllTabs();
+    if (query.trim()) {
+      tabs = tabs.map((tab) => ({
+        ...tab,
+        score: Math.max(
+          fuzzyMatch(query, tab.title),
+          fuzzyMatch(query, tab.content) * 0.5
+          // Content matches worth less
+        )
+      })).filter((tab) => tab.score > 0).sort((a, b) => b.score - a.score);
+    }
+    tabs.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      return a.index - b.index;
+    });
+    list.innerHTML = tabs.map((tab, i) => `
+        <div class="tab-switcher-item ${i === 0 ? "active" : ""} ${tab.isPinned ? "pinned" : ""} ${tab.isModified ? "modified" : ""}" 
+             data-tab-id="${tab.id}">
+            <div class="tab-switcher-item-icon">
+                ${tab.isPinned ? "\u{1F4CC}" : "\u{1F4C4}"}
+            </div>
+            <div class="tab-switcher-item-content">
+                <div class="tab-switcher-item-title">
+                    ${highlightMatch2(query, tab.title)}
+                    ${tab.isModified ? '<span class="modified-dot">\u25CF</span>' : ""}
+                </div>
+                <div class="tab-switcher-item-preview">
+                    ${tab.content ? escapeHtml2(tab.content.substring(0, 80)) + (tab.content.length > 80 ? "..." : "") : "<em>Empty</em>"}
+                </div>
+            </div>
+            <div class="tab-switcher-item-index">#${tab.index + 1}</div>
+        </div>
+    `).join("");
+    if (stat) {
+      const totalTabs = getAllTabs().length;
+      const pinnedCount = tabs.filter((t) => t.isPinned).length;
+      stat.textContent = `${tabs.length}/${totalTabs} tabs${pinnedCount ? ` \u2022 ${pinnedCount} pinned` : ""}`;
+    }
+  }
+  function openTabSwitcher() {
+    const dialog = ensureSwitcherDialog();
+    const input = dialog.querySelector("#tab-switcher-input");
+    if (input) {
+      input.value = "";
+    }
+    renderTabList();
+    dialog.showModal();
+    input?.focus();
+  }
+  function closeSwitcher() {
+    switcherDialog?.close();
+  }
+  function togglePinTab(header) {
+    header.classList.toggle("pinned");
+    let pinIndicator = header.querySelector(".pin-indicator");
+    if (header.classList.contains("pinned")) {
+      if (!pinIndicator) {
+        const newIndicator = document.createElement("span");
+        newIndicator.className = "pin-indicator";
+        newIndicator.textContent = "\u{1F4CC}";
+        newIndicator.title = "Pinned - double-click to unpin";
+        header.insertBefore(newIndicator, header.firstChild);
+        pinIndicator = newIndicator;
+      }
+      const container = qs(".tab-headers-container");
+      const firstUnpinned = container?.querySelector(".tab-header:not(.pinned)");
+      if (container && firstUnpinned && firstUnpinned !== header) {
+        container.insertBefore(header, firstUnpinned);
+      } else if (container) {
+        container.insertBefore(header, container.firstChild);
+      }
+    } else {
+      pinIndicator?.remove();
+    }
+    const closeBtn = header.querySelector(".close");
+    if (closeBtn) {
+      closeBtn.style.display = header.classList.contains("pinned") ? "none" : "";
+    }
+  }
+  function setTabModified(header, modified) {
+    header.classList.toggle("modified", modified);
+  }
+  function clearAllModified() {
+    qsa(".tab-header.modified").forEach((header) => {
+      header.classList.remove("modified");
+    });
+  }
+  function initTabSwitcher() {
+    if (isInitialized) return;
+    isInitialized = true;
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "p" && !e.shiftKey && !e.altKey) {
+        const openDialogs = document.querySelectorAll("dialog[open]");
+        const firstDialog = openDialogs[0];
+        if (openDialogs.length === 0 || openDialogs.length === 1 && firstDialog?.id === "tab-switcher-dialog") {
+          e.preventDefault();
+          openTabSwitcher();
+        }
+      }
+    });
+    document.addEventListener("dblclick", (e) => {
+      const pinIndicator = e.target.closest(".pin-indicator");
+      if (pinIndicator) {
+        const header = pinIndicator.closest(".tab-header");
+        if (header) {
+          e.preventDefault();
+          e.stopPropagation();
+          togglePinTab(header);
+        }
+      }
+    });
+  }
+
   // src/crypto/pbkdf2.ts
   var DEFAULT_ITERATIONS = 15e4;
   async function pbkdf2KeyFromPassword(password, saltHex, iterations = DEFAULT_ITERATIONS) {
@@ -1828,7 +2122,7 @@
   }
   function getSiteFromURL() {
     const path = window.location.pathname || "/";
-    const seg = path.replace(/^\/+|\/+$/g, "");
+    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
     if (seg && seg !== "api") return seg;
     const qp = getQueryParam("site");
     return qp || "local-notes";
@@ -1924,6 +2218,7 @@
     const shortcuts = [
       { keys: "Ctrl+S", desc: "Save notes" },
       { keys: "Ctrl+Alt+T", desc: "New tab" },
+      { keys: "Ctrl+P", desc: "Quick tab switcher" },
       { keys: "Ctrl+R", desc: "Reload from server" },
       { keys: "Ctrl+Shift+F", desc: "Global search" },
       { keys: "Ctrl+1-9", desc: "Switch to tab by number" },
@@ -1978,6 +2273,7 @@
       healthCheckInterval = null;
     }
   }
+  window.stopHealthMonitoring = stopHealthMonitoring;
   function updateButtonEnablement(isTextModified, isSiteNew) {
     const bSave = qs("#button-save");
     const bSaveNew = qs("#button-savenew");
@@ -2020,6 +2316,14 @@
     if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
       updateStatusIndicator("modified", "Modified");
       hideLastSaved();
+      const panel = e.target.closest(".tab-panel");
+      if (panel) {
+        const tabId = panel.id;
+        const header = document.querySelector(`.tab-header[data-tab-id="${tabId}"]`);
+        if (header) {
+          setTabModified(header, true);
+        }
+      }
     }
   });
   async function initSite() {
@@ -2044,6 +2348,8 @@
     ignoreInputEvent = true;
     if (shouldSkipSettingContent !== true) {
       setContentOfTabs(state.getContent(), state);
+    } else {
+      clearAllModified();
     }
     setTimeout(() => {
       ignoreInputEvent = false;
@@ -2122,7 +2428,7 @@ document.getElementById("dec").onclick=async()=>{
     document.getElementById("out").textContent="Decryption failed (wrong password?)";
   }
 };
-<\/script>
+<${"/"}script>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -2360,7 +2666,7 @@ document.getElementById("dec").onclick=async()=>{
     state.onDecryptAndFinish = decryptContentAndFinishInitialization;
     requestAnimationFrame(async () => {
       const path = window.location.pathname || "/";
-      const seg = path.replace(/^\/+|\/+$/g, "");
+      const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
       const qp = getQueryParam("site");
       const hasSiteId = seg && seg !== "api" || qp;
       if (!hasSiteId) return;
@@ -2384,8 +2690,9 @@ document.getElementById("dec").onclick=async()=>{
     initKeyboardShortcuts();
     initGlobalSearch();
     initPasswordStrengthIndicators();
+    initTabSwitcher();
     const path = window.location.pathname || "/";
-    const seg = path.replace(/^\/+|\/+$/g, "");
+    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
     const qp = new URL(window.location.href).searchParams.get("site");
     const isLanding = !(seg && seg !== "api" || qp);
     initKineticBackground(isLanding);
