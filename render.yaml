@@ -4,6 +4,6 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: node dist/server.js
     autoDeploy: true
