@@ -5,11 +5,13 @@
   "description": "Tabbed, password-encrypted notes. Frontend + Node/Express backend storing only encrypted blobs.",
   "main": "server.js",
   "scripts": {
-    "start": "set NODE_ENV=production && node dist/server.js",
+    "start": "node dist/server.js",
+    "start:win": "set NODE_ENV=production && node dist/server.js",
     "dev": "set NODE_ENV=development && tsx server.ts",
     "dev:watch": "set NODE_ENV=development && tsx watch server.ts",
-    "prod": "set NODE_ENV=production && node dist/server.js",
+    "prod": "node dist/server.js",
     "build": "node build.js",
+    "postinstall": "npm run build",
     "bundle": "esbuild src/app.ts --bundle --minify --outfile=app.min.js --format=iife --target=es2020",
     "bundle:dev": "esbuild src/app.ts --bundle --outfile=app.js --format=iife --target=es2020 --sourcemap",
     "typecheck": "tsc --noEmit",
@@ -22,6 +24,7 @@
     "node": ">=18.x"
   },
   "dependencies": {
+    "esbuild": "^0.24.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
@@ -33,7 +36,6 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.8",
     "@vitest/coverage-v8": "^4.0.17",
-    "esbuild": "^0.24.0",
     "eslint": "^9.39.2",
     "globals": "^17.0.0",
     "jsdom": "^27.4.0",
