@@ -28,6 +28,8 @@ import { toast, showNotification } from './ui/toast.js';
 import { openPasswordDialog, openConfirmDialog } from './ui/dialogs.js';
 import { initTheme, wireThemeToggle } from './ui/themes.js';
 import { initKineticBackground, initKineticButtons, replaceLoaderWithKinetic } from './ui/kinetic.js';
+import { initGlobalSearch, openSearch } from './ui/search.js';
+import { initPasswordStrengthIndicators } from './ui/password-strength.js';
 import {
     initTabsLayout,
     activateTab,
@@ -212,6 +214,7 @@ function showKeyboardShortcutsHelp(): void {
         { keys: 'Ctrl+S', desc: 'Save notes' },
         { keys: 'Ctrl+Alt+T', desc: 'New tab' },
         { keys: 'Ctrl+R', desc: 'Reload from server' },
+        { keys: 'Ctrl+Shift+F', desc: 'Global search' },
         { keys: 'Ctrl+1-9', desc: 'Switch to tab by number' },
         { keys: 'Ctrl+Tab', desc: 'Next tab' },
         { keys: 'Ctrl+Shift+Tab', desc: 'Previous tab' },
@@ -684,8 +687,8 @@ function setupKeyboardShortcuts(): void {
             return;
         }
 
-        // Ctrl/Cmd + T: New Tab
-        if (isCtrlOrCmd && key === "t") {
+        // Ctrl/Cmd + T: New Tab (but not Ctrl+Alt+T which is handled separately)
+        if (isCtrlOrCmd && key === "t" && !e.altKey) {
             e.preventDefault();
             addTab(false, "", null, () => state.updateIsTextModified(true));
             return;
@@ -786,6 +789,10 @@ document.addEventListener('DOMContentLoaded', () => {
     wireThemeToggle();
     initKeyboardShortcuts();
 
+    // Initialize new features
+    initGlobalSearch();
+    initPasswordStrengthIndicators();
+
     // Initialize kinetic geometry animations
     const path = window.location.pathname || "/";
     const seg = path.replace(/^\/+|\/+$/g, "");
@@ -795,6 +802,18 @@ document.addEventListener('DOMContentLoaded', () => {
     initKineticBackground(isLanding);
     initKineticButtons();
     replaceLoaderWithKinetic();
+
+    // Add search button to menubar (before help button)
+    const helpButton = qs('#help-button');
+    if (helpButton && !qs('#search-button')) {
+        const searchButton = document.createElement('button');
+        searchButton.id = 'search-button';
+        searchButton.title = 'Global Search (Ctrl+Shift+F)';
+        searchButton.style.cssText = 'padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;';
+        searchButton.textContent = '🔍';
+        searchButton.addEventListener('click', openSearch);
+        helpButton.parentNode?.insertBefore(searchButton, helpButton);
+    }
 
     // Global color picker functionality
     const globalColorPicker = document.getElementById('tab-color-picker') as HTMLInputElement;

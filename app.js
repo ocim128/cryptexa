@@ -975,6 +975,452 @@
     return all;
   }
 
+  // src/ui/search.ts
+  var searchState = {
+    isOpen: false,
+    query: "",
+    results: [],
+    selectedIndex: -1
+  };
+  var searchDialog = null;
+  var searchInput = null;
+  var resultsContainer = null;
+  function searchAllTabs(query) {
+    if (!query || query.length < 2) return [];
+    const results = [];
+    const headers = qsa(".tab-header");
+    const lowerQuery = query.toLowerCase();
+    for (const header of headers) {
+      const tabId = header.dataset.tabId;
+      if (!tabId) continue;
+      const tabTitle = header.querySelector(".tab-title")?.textContent || "Untitled";
+      const textarea = qs(`#${tabId} .textarea-contents`);
+      if (!textarea) continue;
+      const content = textarea.value;
+      const lines = content.split("\n");
+      for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+        const line = lines[lineNum];
+        if (!line) continue;
+        const lowerLine = line.toLowerCase();
+        let matchIndex = lowerLine.indexOf(lowerQuery);
+        while (matchIndex !== -1) {
+          results.push({
+            tabId,
+            tabTitle,
+            lineNumber: lineNum + 1,
+            lineContent: line,
+            matchStart: matchIndex,
+            matchEnd: matchIndex + query.length
+          });
+          matchIndex = lowerLine.indexOf(lowerQuery, matchIndex + 1);
+        }
+      }
+    }
+    return results;
+  }
+  function highlightMatch(result) {
+    const before = escapeHtml(result.lineContent.substring(0, result.matchStart));
+    const match = escapeHtml(result.lineContent.substring(result.matchStart, result.matchEnd));
+    const after = escapeHtml(result.lineContent.substring(result.matchEnd));
+    const maxLen = 60;
+    let displayBefore = before;
+    let displayAfter = after;
+    if (before.length > maxLen / 2) {
+      displayBefore = "..." + before.substring(before.length - maxLen / 2);
+    }
+    if (after.length > maxLen / 2) {
+      displayAfter = after.substring(0, maxLen / 2) + "...";
+    }
+    return `${displayBefore}<mark>${match}</mark>${displayAfter}`;
+  }
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function renderResults() {
+    if (!resultsContainer) return;
+    if (searchState.results.length === 0) {
+      if (searchState.query.length >= 2) {
+        resultsContainer.innerHTML = `
+                <div class="search-no-results">
+                    <span class="search-no-results-icon">\u{1F50D}</span>
+                    <span>No matches found for "<strong>${escapeHtml(searchState.query)}</strong>"</span>
+                </div>
+            `;
+      } else if (searchState.query.length > 0) {
+        resultsContainer.innerHTML = `
+                <div class="search-hint">Type at least 2 characters to search</div>
+            `;
+      } else {
+        resultsContainer.innerHTML = `
+                <div class="search-hint">Start typing to search across all tabs</div>
+            `;
+      }
+      return;
+    }
+    const html = searchState.results.map((result, index) => `
+        <div class="search-result${index === searchState.selectedIndex ? " selected" : ""}" 
+             data-index="${index}"
+             data-tab-id="${result.tabId}"
+             data-line="${result.lineNumber}">
+            <div class="search-result-header">
+                <span class="search-result-tab">\u{1F4C4} ${escapeHtml(result.tabTitle)}</span>
+                <span class="search-result-line">Line ${result.lineNumber}</span>
+            </div>
+            <div class="search-result-content">${highlightMatch(result)}</div>
+        </div>
+    `).join("");
+    resultsContainer.innerHTML = `
+        <div class="search-results-header">
+            Found ${searchState.results.length} match${searchState.results.length === 1 ? "" : "es"}
+        </div>
+        ${html}
+    `;
+  }
+  function goToResult(result) {
+    const tabHeader = qs(`.tab-header[data-tab-id="${result.tabId}"]`);
+    if (tabHeader) {
+      activateTab(tabHeader);
+      setTimeout(() => {
+        const textarea = qs(`#${result.tabId} .textarea-contents`);
+        if (!textarea) return;
+        const lines = textarea.value.split("\n");
+        let charPosition = 0;
+        for (let i = 0; i < result.lineNumber - 1; i++) {
+          const lineLength = lines[i]?.length ?? 0;
+          charPosition += lineLength + 1;
+        }
+        charPosition += result.matchStart;
+        textarea.focus();
+        textarea.setSelectionRange(charPosition, charPosition + (result.matchEnd - result.matchStart));
+        const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 24;
+        const scrollTop = (result.lineNumber - 5) * lineHeight;
+        textarea.scrollTop = Math.max(0, scrollTop);
+      }, 100);
+    }
+    closeSearch();
+  }
+  function handleSearchKeydown(e) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (searchState.results.length > 0) {
+        searchState.selectedIndex = Math.min(
+          searchState.selectedIndex + 1,
+          searchState.results.length - 1
+        );
+        renderResults();
+        scrollSelectedIntoView();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (searchState.results.length > 0) {
+        searchState.selectedIndex = Math.max(searchState.selectedIndex - 1, 0);
+        renderResults();
+        scrollSelectedIntoView();
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const selectedResult = searchState.results[searchState.selectedIndex];
+      if (searchState.selectedIndex >= 0 && selectedResult) {
+        goToResult(selectedResult);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeSearch();
+    }
+  }
+  function scrollSelectedIntoView() {
+    const selected = resultsContainer?.querySelector(".search-result.selected");
+    if (selected) {
+      selected.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+  function handleSearchInput() {
+    if (!searchInput) return;
+    searchState.query = searchInput.value;
+    searchState.results = searchAllTabs(searchState.query);
+    searchState.selectedIndex = searchState.results.length > 0 ? 0 : -1;
+    renderResults();
+  }
+  function handleResultClick(e) {
+    const resultEl = e.target.closest(".search-result");
+    if (!resultEl) return;
+    const index = parseInt(resultEl.getAttribute("data-index") || "-1", 10);
+    const result = searchState.results[index];
+    if (index >= 0 && result) {
+      goToResult(result);
+    }
+  }
+  function openSearch() {
+    if (!searchDialog) {
+      initSearchDialog();
+    }
+    searchState = {
+      isOpen: true,
+      query: "",
+      results: [],
+      selectedIndex: -1
+    };
+    if (searchInput) {
+      searchInput.value = "";
+    }
+    renderResults();
+    searchDialog?.showModal();
+    setTimeout(() => {
+      searchInput?.focus();
+    }, 50);
+  }
+  function closeSearch() {
+    searchState.isOpen = false;
+    searchDialog?.close();
+  }
+  function initSearchDialog() {
+    searchDialog = qs("#search-dialog");
+    if (searchDialog) {
+      searchInput = qs("#search-input");
+      resultsContainer = qs("#search-results");
+      return;
+    }
+    const dialog = document.createElement("dialog");
+    dialog.id = "search-dialog";
+    dialog.className = "app-dialog search-dialog";
+    dialog.innerHTML = `
+        <form method="dialog">
+            <div class="search-header">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">\u{1F50D}</span>
+                    <input type="text" 
+                           id="search-input" 
+                           class="search-input" 
+                           placeholder="Search across all tabs..."
+                           autocomplete="off"
+                           spellcheck="false" />
+                    <kbd class="search-kbd">Esc</kbd>
+                </div>
+            </div>
+            <div id="search-results" class="search-results"></div>
+            <div class="search-footer">
+                <span>\u2191\u2193 Navigate</span>
+                <span>\u21B5 Go to</span>
+                <span>Esc Close</span>
+            </div>
+        </form>
+    `;
+    document.body.appendChild(dialog);
+    searchDialog = dialog;
+    searchInput = qs("#search-input");
+    resultsContainer = qs("#search-results");
+    if (searchInput) {
+      on(searchInput, "input", handleSearchInput);
+      on(searchInput, "keydown", handleSearchKeydown);
+    }
+    if (resultsContainer) {
+      on(resultsContainer, "click", handleResultClick);
+    }
+    on(dialog, "click", (e) => {
+      if (e.target === dialog) {
+        closeSearch();
+      }
+    });
+  }
+  function initGlobalSearch() {
+    initSearchDialog();
+    on(document, "keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        openSearch();
+      }
+    });
+  }
+
+  // src/ui/password-strength.ts
+  function analyzePasswordStrength(password) {
+    if (!password || password.length === 0) {
+      return {
+        level: "weak",
+        score: 0,
+        label: "Enter password",
+        color: "var(--muted)",
+        feedback: []
+      };
+    }
+    let score = 0;
+    const feedback = [];
+    if (password.length >= 16) {
+      score += 30;
+    } else if (password.length >= 12) {
+      score += 25;
+    } else if (password.length >= 8) {
+      score += 15;
+    } else if (password.length >= 6) {
+      score += 10;
+    } else {
+      feedback.push("Use at least 8 characters");
+    }
+    const hasLowercase = /[a-z]/.test(password);
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+    const hasSymbols = /[!@#$%^&*()_+\-=[\]{}|;':",.<>?/`~\\]/.test(password);
+    const hasSpaces = /\s/.test(password);
+    if (hasLowercase) {
+      score += 10;
+    } else {
+      feedback.push("Add lowercase letters");
+    }
+    if (hasUppercase) {
+      score += 10;
+    } else {
+      feedback.push("Add uppercase letters");
+    }
+    if (hasNumbers) {
+      score += 15;
+    } else {
+      feedback.push("Add numbers");
+    }
+    if (hasSymbols) {
+      score += 20;
+    } else {
+      feedback.push("Add special characters (!@#$%...)");
+    }
+    if (hasSpaces && password.split(" ").length >= 3) {
+      score += 5;
+    }
+    const commonPatterns = [
+      /^12345/,
+      /^password/i,
+      /^qwerty/i,
+      /^abc123/i,
+      /(.)\1{3,}/,
+      // Repeated characters (4+)
+      /^[a-z]+$/i,
+      // All letters only
+      /^\d+$/
+      // All numbers only
+    ];
+    for (const pattern of commonPatterns) {
+      if (pattern.test(password)) {
+        score = Math.max(0, score - 20);
+        if (!feedback.includes("Avoid common patterns")) {
+          feedback.push("Avoid common patterns");
+        }
+      }
+    }
+    if (password.length >= 20 && hasSpaces) {
+      score = Math.min(100, score + 10);
+    }
+    let level;
+    let label;
+    let color;
+    if (score >= 85) {
+      level = "very-strong";
+      label = "Very Strong";
+      color = "var(--accent)";
+    } else if (score >= 70) {
+      level = "strong";
+      label = "Strong";
+      color = "#22c55e";
+    } else if (score >= 50) {
+      level = "good";
+      label = "Good";
+      color = "#eab308";
+    } else if (score >= 30) {
+      level = "fair";
+      label = "Fair";
+      color = "var(--warning)";
+    } else {
+      level = "weak";
+      label = "Weak";
+      color = "var(--danger)";
+    }
+    return {
+      level,
+      score: Math.min(100, Math.max(0, score)),
+      label,
+      color,
+      feedback: feedback.slice(0, 3)
+      // Max 3 feedback items
+    };
+  }
+  function createStrengthIndicator() {
+    const container = document.createElement("div");
+    container.className = "password-strength";
+    container.innerHTML = `
+        <div class="password-strength-bar">
+            <div class="password-strength-fill"></div>
+        </div>
+        <div class="password-strength-info">
+            <span class="password-strength-label"></span>
+            <span class="password-strength-feedback"></span>
+        </div>
+    `;
+    return container;
+  }
+  function updateStrengthIndicator(container, strength) {
+    const fill = container.querySelector(".password-strength-fill");
+    const label = container.querySelector(".password-strength-label");
+    const feedback = container.querySelector(".password-strength-feedback");
+    if (fill) {
+      fill.style.width = `${strength.score}%`;
+      fill.style.backgroundColor = strength.color;
+      fill.setAttribute("data-level", strength.level);
+    }
+    if (label) {
+      label.textContent = strength.label;
+      label.style.color = strength.color;
+    }
+    if (feedback) {
+      feedback.textContent = strength.feedback.join(" \u2022 ");
+    }
+  }
+  function attachStrengthIndicator(inputSelector) {
+    const input = qs(inputSelector);
+    if (!input) return null;
+    const existingIndicator = input.parentElement?.querySelector(".password-strength");
+    if (existingIndicator) {
+      return existingIndicator;
+    }
+    const indicator = createStrengthIndicator();
+    input.parentNode?.insertBefore(indicator, input.nextSibling);
+    input.addEventListener("input", () => {
+      const strength = analyzePasswordStrength(input.value);
+      updateStrengthIndicator(indicator, strength);
+    });
+    updateStrengthIndicator(indicator, analyzePasswordStrength(input.value));
+    return indicator;
+  }
+  function initPasswordStrengthIndicators() {
+    const newPasswordInput = qs("#newpassword1");
+    if (newPasswordInput) {
+      attachStrengthIndicator("#newpassword1");
+    }
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "open") {
+          const dialog = mutation.target;
+          if (dialog.id === "dialog-new-password" && dialog.open) {
+            const input = qs("#newpassword1");
+            if (input) {
+              const existing = dialog.querySelector(".password-strength");
+              if (!existing) {
+                attachStrengthIndicator("#newpassword1");
+              }
+              const indicator = dialog.querySelector(".password-strength");
+              if (indicator) {
+                updateStrengthIndicator(
+                  indicator,
+                  analyzePasswordStrength("")
+                );
+              }
+            }
+          }
+        }
+      }
+    });
+    const newPasswordDialog = qs("#dialog-new-password");
+    if (newPasswordDialog) {
+      observer.observe(newPasswordDialog, { attributes: true });
+    }
+  }
+
   // src/crypto/pbkdf2.ts
   var DEFAULT_ITERATIONS = 15e4;
   async function pbkdf2KeyFromPassword(password, saltHex, iterations = DEFAULT_ITERATIONS) {
@@ -1479,6 +1925,7 @@
       { keys: "Ctrl+S", desc: "Save notes" },
       { keys: "Ctrl+Alt+T", desc: "New tab" },
       { keys: "Ctrl+R", desc: "Reload from server" },
+      { keys: "Ctrl+Shift+F", desc: "Global search" },
       { keys: "Ctrl+1-9", desc: "Switch to tab by number" },
       { keys: "Ctrl+Tab", desc: "Next tab" },
       { keys: "Ctrl+Shift+Tab", desc: "Previous tab" },
@@ -1861,7 +2308,7 @@ document.getElementById("dec").onclick=async()=>{
         }
         return;
       }
-      if (isCtrlOrCmd && key === "t") {
+      if (isCtrlOrCmd && key === "t" && !e.altKey) {
         e.preventDefault();
         addTab(false, "", null, () => state.updateIsTextModified(true));
         return;
@@ -1935,6 +2382,8 @@ document.getElementById("dec").onclick=async()=>{
     initTheme();
     wireThemeToggle();
     initKeyboardShortcuts();
+    initGlobalSearch();
+    initPasswordStrengthIndicators();
     const path = window.location.pathname || "/";
     const seg = path.replace(/^\/+|\/+$/g, "");
     const qp = new URL(window.location.href).searchParams.get("site");
@@ -1942,6 +2391,16 @@ document.getElementById("dec").onclick=async()=>{
     initKineticBackground(isLanding);
     initKineticButtons();
     replaceLoaderWithKinetic();
+    const helpButton = qs("#help-button");
+    if (helpButton && !qs("#search-button")) {
+      const searchButton = document.createElement("button");
+      searchButton.id = "search-button";
+      searchButton.title = "Global Search (Ctrl+Shift+F)";
+      searchButton.style.cssText = "padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;";
+      searchButton.textContent = "\u{1F50D}";
+      searchButton.addEventListener("click", openSearch);
+      helpButton.parentNode?.insertBefore(searchButton, helpButton);
+    }
     const globalColorPicker = document.getElementById("tab-color-picker");
     if (globalColorPicker) {
       globalColorPicker.addEventListener("input", (e) => {
