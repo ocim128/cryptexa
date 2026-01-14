@@ -1,6 +1,7 @@
 /* ============================================
    KINETIC GEOMETRY CSS
    Mathematically Satisfying Motion System
+   Optimized & Streamlined
    ============================================ */
 
 :root {
@@ -16,7 +17,7 @@
     --ease-breathe: cubic-bezier(0.45, 0.05, 0.55, 0.95);
     --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-    /* Kinetic Colors (more visible) */
+    /* Kinetic Colors */
     --kinetic-line: rgba(122, 162, 255, 0.35);
     --kinetic-node: rgba(122, 162, 255, 0.5);
     --kinetic-glow: rgba(122, 162, 255, 0.2);
@@ -40,13 +41,8 @@
     z-index: 0;
 }
 
-.kinetic-bg--landing {
-    z-index: 0;
-}
-
 /* ============================================
-   ORBITAL SYSTEM
-   Floating shapes in elliptical paths
+   ORBITAL SYSTEM - Main Animation
    ============================================ */
 
 .orbital-system {
@@ -67,7 +63,6 @@
 .orbital-ring--1 {
     width: 200px;
     height: 200px;
-    animation-delay: 0s;
 }
 
 .orbital-ring--2 {
@@ -173,18 +168,17 @@
 }
 
 @keyframes shape-spin {
-    0% {
+    from {
         transform: rotate(0deg);
     }
 
-    100% {
+    to {
         transform: rotate(360deg);
     }
 }
 
 /* ============================================
-   BREATHING GRID
-   Sacred geometry that expands/contracts
+   BREATHING GRID - Sacred Geometry
    ============================================ */
 
 .breathing-grid {
@@ -264,7 +258,6 @@
 
 /* ============================================
    PENDULUM WAVE LOADER
-   Mesmerizing loading animation
    ============================================ */
 
 .pendulum-loader {
@@ -298,7 +291,7 @@
     box-shadow: 0 0 10px var(--kinetic-glow);
 }
 
-/* Each pendulum has slightly different period for wave effect */
+/* Staggered pendulum timing for wave effect */
 .pendulum:nth-child(1) {
     animation-duration: 1.4s;
 }
@@ -348,123 +341,7 @@
 }
 
 /* ============================================
-   HARMONIC OSCILLATOR SPINNER
-   Wave-based loading circles
-   ============================================ */
-
-.harmonic-spinner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    height: 40px;
-}
-
-.harmonic-dot {
-    width: 10px;
-    height: 10px;
-    background: var(--kinetic-node);
-    border-radius: 50%;
-    animation: harmonic-bounce 1.2s var(--ease-orbit) infinite;
-}
-
-.harmonic-dot:nth-child(1) {
-    animation-delay: 0s;
-}
-
-.harmonic-dot:nth-child(2) {
-    animation-delay: 0.1s;
-}
-
-.harmonic-dot:nth-child(3) {
-    animation-delay: 0.2s;
-}
-
-.harmonic-dot:nth-child(4) {
-    animation-delay: 0.3s;
-}
-
-.harmonic-dot:nth-child(5) {
-    animation-delay: 0.4s;
-}
-
-@keyframes harmonic-bounce {
-
-    0%,
-    100% {
-        transform: translateY(0) scale(1);
-        opacity: 0.4;
-    }
-
-    50% {
-        transform: translateY(-16px) scale(1.2);
-        opacity: 1;
-    }
-}
-
-/* ============================================
-   GEAR SYSTEM
-   Interlocking rotating gears
-   ============================================ */
-
-.gear-system {
-    position: relative;
-    width: 120px;
-    height: 120px;
-}
-
-.gear {
-    position: absolute;
-    border: 3px solid var(--kinetic-node);
-    border-radius: 50%;
-    animation: gear-rotate var(--orbit-fast) linear infinite;
-}
-
-.gear::before {
-    content: '';
-    position: absolute;
-    inset: 25%;
-    border: 2px solid var(--kinetic-line);
-    border-radius: 50%;
-}
-
-.gear--1 {
-    width: 60px;
-    height: 60px;
-    top: 0;
-    left: 0;
-}
-
-.gear--2 {
-    width: 50px;
-    height: 50px;
-    top: 10px;
-    right: 10px;
-    animation-direction: reverse;
-    animation-duration: calc(var(--orbit-fast) * 0.833);
-}
-
-.gear--3 {
-    width: 40px;
-    height: 40px;
-    bottom: 10px;
-    left: 30px;
-    animation-duration: calc(var(--orbit-fast) * 0.667);
-}
-
-@keyframes gear-rotate {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-/* ============================================
    LISSAJOUS CANVAS
-   For complex mathematical curves
    ============================================ */
 
 .lissajous-canvas {
@@ -474,32 +351,7 @@
 }
 
 /* ============================================
-   KINETIC DIALOG TRANSITIONS
-   ============================================ */
-
-.app-dialog[open] {
-    animation: dialog-kinetic-in 0.4s var(--ease-bounce) forwards;
-}
-
-@keyframes dialog-kinetic-in {
-    0% {
-        opacity: 0;
-        transform: scale(0.9) rotate(-2deg);
-    }
-
-    60% {
-        transform: scale(1.02) rotate(0.5deg);
-    }
-
-    100% {
-        opacity: 1;
-        transform: scale(1) rotate(0deg);
-    }
-}
-
-/* ============================================
    DIALOG KINETIC DECORATIONS
-   Password dialog geometric effects
    ============================================ */
 
 .app-dialog--kinetic {
@@ -526,7 +378,6 @@
 .dialog-orbit-ring--1 {
     width: 320px;
     height: 320px;
-    animation-delay: 0s;
 }
 
 .dialog-orbit-ring--2 {
@@ -586,11 +437,11 @@
 }
 
 @keyframes dialog-orbit-path {
-    0% {
+    from {
         transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg);
     }
 
-    100% {
+    to {
         transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg);
     }
 }
@@ -630,8 +481,28 @@
 }
 
 /* ============================================
-   KINETIC BUTTON INTERACTIONS
+   KINETIC TRANSITIONS & INTERACTIONS
    ============================================ */
+
+.app-dialog[open] {
+    animation: dialog-kinetic-in 0.4s var(--ease-bounce) forwards;
+}
+
+@keyframes dialog-kinetic-in {
+    0% {
+        opacity: 0;
+        transform: scale(0.9) rotate(-2deg);
+    }
+
+    60% {
+        transform: scale(1.02) rotate(0.5deg);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+    }
+}
 
 .kinetic-ripple {
     position: absolute;
@@ -654,10 +525,6 @@
     }
 }
 
-/* ============================================
-   TAB KINETIC TRANSITIONS  
-   ============================================ */
-
 .tab-panel {
     animation: tab-enter 0.3s var(--ease-bounce) forwards;
 }
@@ -676,7 +543,6 @@
 
 /* ============================================
    FLOATING PARTICLES
-   Subtle background movement
    ============================================ */
 
 .particle {
@@ -712,34 +578,6 @@
 }
 
 /* ============================================
-   CONNECTION LINES (for grid)
-   ============================================ */
-
-.connection-line {
-    position: absolute;
-    height: 1px;
-    background: linear-gradient(90deg,
-            transparent,
-            var(--kinetic-line),
-            transparent);
-    animation: line-pulse 3s var(--ease-breathe) infinite;
-}
-
-@keyframes line-pulse {
-
-    0%,
-    100% {
-        opacity: 0.2;
-        transform: scaleX(1);
-    }
-
-    50% {
-        opacity: 0.5;
-        transform: scaleX(1.05);
-    }
-}
-
-/* ============================================
    ACCESSIBILITY: Reduced Motion
    ============================================ */
 
@@ -750,10 +588,7 @@
     .orbiter__shape,
     .breathing-grid__layer,
     .pendulum,
-    .harmonic-dot,
-    .gear,
     .particle,
-    .connection-line,
     .kinetic-ripple,
     .dialog-orbit-ring,
     .dialog-orbiter,

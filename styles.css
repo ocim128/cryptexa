@@ -682,18 +682,7 @@ body {
   z-index: 2147483590
 }
 
-html.password-mode #menubar,
-html.password-mode #main-content-outter,
-html.password-mode .tabs {
-  /* defensive */
-  /* Using blur+opacity for privacy while keeping structure for layout stability */
-}
-
-html.password-mode #menubar,
-html.password-mode #main-content-outter {
-  /* classes toggled from JS for stronger control too */
-  /* no direct rules here; JS applies .app-masked or .app-hidden to these nodes */
-}
+/* Password mode classes are toggled via JS (.app-masked, .app-hidden) */
 
 .app-dialog::before {
   content: '';
@@ -1138,4 +1127,250 @@ html.password-mode #main-content-outter {
   font-size: .85em;
   color: var(--muted);
   text-align: center
+}
+
+/* ============================================
+   LANDING PAGE STYLES
+   ============================================ */
+
+.landing {
+  display: none;
+  max-width: 520px;
+  margin: 60px auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 60px 48px;
+  box-shadow: 0 25px 80px var(--shadow);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.landing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: var(--gradient-brand);
+  border-radius: 24px 24px 0 0;
+}
+
+.landing::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(122, 162, 255, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.landing>* {
+  position: relative;
+  z-index: 1;
+}
+
+.landing .logo {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  display: block;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(122, 162, 255, 0.2);
+  animation: float 4s ease-in-out infinite;
+  background: var(--panel-2);
+  padding: 8px;
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+
+  50% {
+    transform: translateY(-10px) scale(1.02);
+  }
+}
+
+.landing h1 {
+  margin: 0 0 16px 0;
+  color: var(--text);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing .subtitle {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 32px;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.landing p {
+  color: var(--muted);
+  margin: 0 0 40px 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.landing .input-group {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 32px;
+  align-items: stretch;
+}
+
+.landing input[type="text"] {
+  flex: 1;
+  padding: 18px 24px;
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 16px;
+  transition: all 0.3s ease;
+  outline: none;
+}
+
+.landing input[type="text"]:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 6px rgba(122, 162, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.landing input[type="text"]::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.landing button {
+  padding: 18px 32px;
+  border-radius: 16px;
+  border: none;
+  background: var(--gradient-brand);
+  color: white;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  box-shadow: 0 6px 20px rgba(122, 162, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.landing button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.landing button:hover::before {
+  left: 100%;
+}
+
+.landing button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(122, 162, 255, 0.4);
+}
+
+.landing button:active {
+  transform: translateY(-1px);
+}
+
+.landing .footer-text {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 32px;
+  opacity: 0.8;
+  line-height: 1.6;
+  background: var(--panel-2);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.landing .footer-text code {
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  border: 1px solid var(--border);
+}
+
+/* ============================================
+   ENHANCED PASSWORD DIALOG
+   ============================================ */
+
+.app-dialog input[type="password"] {
+  width: 100%;
+  padding: 16px 20px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  margin-bottom: 20px;
+  font-family: inherit;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.app-dialog input[type="password"]:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.15);
+  background: var(--panel);
+}
+
+.app-dialog input[type="password"]::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+/* Enhanced dialog primary button */
+.app-dialog .primary {
+  background: var(--gradient-brand);
+  border-color: var(--brand);
+  color: white;
+  box-shadow: 0 4px 16px rgba(122, 162, 255, 0.25);
+  transition: all 0.3s ease;
+}
+
+.app-dialog .primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(122, 162, 255, 0.35);
+}
+
+@media (max-width: 520px) {
+  .landing {
+    margin: 20px;
+    padding: 40px 24px;
+  }
+
+  .landing .input-group {
+    flex-direction: column;
+  }
+
+  .landing button {
+    width: 100%;
+  }
 }
