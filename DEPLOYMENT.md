@@ -50,9 +50,17 @@ LOG_LEVEL=info
 **Pros**: Global edge network, serverless, automatic scaling
 
 1. Install Vercel CLI: `npm i -g vercel`
-2. Run `vercel` in project directory
-3. Configure environment variables in Vercel dashboard
+2. Run `vercel link` in the project directory
+3. Configure environment variables in the Vercel dashboard:
+   - `NODE_ENV=production`
+   - `DB_TYPE=mongodb`
+   - `MONGODB_URI=...`
+   - `MAX_CONTENT_SIZE=4mb`
 4. Deploy with `vercel --prod`
+
+Notes:
+- `npm run build` now generates `public/` assets for Vercel and `dist/` for traditional Node hosting.
+- Do not use file-backed persistence on Vercel. The deployment should use MongoDB only.
 
 ### 3. Docker Deployment
 
@@ -134,7 +142,7 @@ server {
 | `NODE_ENV` | `development` | Environment mode |
 | `PORT` | `3000` | Server port |
 | `DB_FILE` | `./data/cryptexa.json` | Database file path |
-| `MAX_CONTENT_SIZE` | `1mb` | Maximum request size |
+| `MAX_CONTENT_SIZE` | `4mb` | Maximum request size |
 | `RATE_LIMIT_REQUESTS` | `1000` (dev), `100` (prod) | Requests per window |
 | `RATE_LIMIT_WINDOW_MS` | `900000` | Rate limit window (15 min) |
 | `LOG_LEVEL` | `info` | Logging level |
@@ -172,7 +180,7 @@ server {
 curl https://your-domain.com/health
 
 # Expected response
-{"status":"ok","timestamp":"2024-01-01T00:00:00.000Z"}
+{"ok":true}
 ```
 
 ### Log Monitoring

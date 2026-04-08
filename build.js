@@ -1,166 +1,150 @@
 #!/usr/bin/env node
 
 /**
- * Production Build Script for Cryptexa
- * Optimizes files for production deployment
- * Supports both modular (src/) and bundled (app.js) output
+ * Production build for Cryptexa.
+ * Creates:
+ * - dist/ for traditional Node deployments
+ * - public/ assets for Vercel static delivery
  */
 
 const fs = require('fs');
 const path = require('path');
 
-
-// Configuration
 const BUILD_DIR = 'dist';
-const STATIC_FILES = ['index.html', 'styles.css', 'kinetic.css', 'package.json', 'icon.png'];
-const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore'];
+const PUBLIC_DIR = 'public';
+const PUBLIC_STATIC_FILES = ['styles.css', 'kinetic.css', 'icon.png'];
+const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore', 'vercel.json'];
 const SRC_DIR = 'src';
 
-console.log('🚀 Building Cryptexa for production...');
+console.log('Building Cryptexa for production...');
 
-// Check if esbuild is available for bundling
-let hasEsbuild = false;
+let esbuild = null;
 try {
-  require.resolve('esbuild');
-  hasEsbuild = true;
+  esbuild = require('esbuild');
 } catch {
-  console.log('⚠️  esbuild not found. Install with: npm install -D esbuild');
-  console.log('   Falling back to copying the original app.js');
+  console.log('esbuild not found. Falling back to the checked-in browser bundle.');
 }
 
-// Clean build directory
-if (fs.existsSync(BUILD_DIR)) {
-  fs.rmSync(BUILD_DIR, { recursive: true });
-  console.log('✅ Cleaned build directory');
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-// Create build directory
-fs.mkdirSync(BUILD_DIR, { recursive: true });
-console.log('✅ Created build directory');
-
-// Bundle src/ files if esbuild is available and src/ exists
-if (hasEsbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'app.ts'))) {
-  try {
-    console.log('📦 Bundling modular source files...');
-
-    // Use esbuild to bundle the modular source into a single file
-
-    const esbuild = require('esbuild');
-    esbuild.buildSync({
-      entryPoints: [path.join(SRC_DIR, 'app.ts')],
-      bundle: true,
-      minify: true,
-      outfile: path.join(BUILD_DIR, 'app.js'),
-      format: 'iife',
-      target: ['es2020'],
-      sourcemap: false,
-    });
-
-    console.log('✅ Bundled modular source to app.js');
-  } catch (error) {
-    console.error('❌ Bundle failed:', error.message);
-    console.log('   Falling back to copying original app.js');
-    if (fs.existsSync('app.js')) {
-      fs.copyFileSync('app.js', path.join(BUILD_DIR, 'app.js'));
-      console.log('✅ Copied original app.js');
-    }
-  }
-} else if (fs.existsSync('app.js')) {
-  // Fall back to copying and optionally minifying app.js
-  const jsSource = fs.readFileSync('app.js', 'utf8');
-
-  if (hasEsbuild) {
-    try {
-      // Use esbuild's transform API for minification (faster than terser)
-      const esbuild = require('esbuild');
-      const result = esbuild.transformSync(jsSource, {
-        minify: true,
-        target: ['es2020'],
-      });
-      fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), result.code);
-      console.log('✅ Minified and copied app.js');
-    } catch (error) {
-      console.warn('⚠️  JS minification failed:', error.message);
-      fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), jsSource);
-      console.log('✅ Copied app.js (unminified)');
-    }
-  } else {
-    fs.writeFileSync(path.join(BUILD_DIR, 'app.js'), jsSource);
-    console.log('✅ Copied app.js (unminified - install esbuild for minification)');
+function writeFileToTargets(relativePath, content, targets) {
+  for (const targetDir of targets) {
+    ensureDir(targetDir);
+    fs.writeFileSync(path.join(targetDir, relativePath), content);
   }
 }
 
-// Copy static files
-STATIC_FILES.forEach(file => {
-  if (fs.existsSync(file) && file !== 'app.js') {
-    fs.copyFileSync(file, path.join(BUILD_DIR, file));
-    console.log(`✅ Copied ${file}`);
+function copyFileToTargets(sourceFile, targets, outputName = sourceFile) {
+  if (!fs.existsSync(sourceFile)) {
+    return;
   }
-});
 
-// Compile server.ts to dist/server.js
-if (hasEsbuild && fs.existsSync('server.ts')) {
-  try {
-    console.log('📦 Compiling server.ts...');
-    require('esbuild').buildSync({
-      entryPoints: ['server.ts'],
-      platform: 'node',
-      outfile: path.join(BUILD_DIR, 'server.js'),
-      target: 'node18',
-      format: 'cjs',
-    });
-    console.log('✅ Compiled server.ts to dist/server.js');
-  } catch (e) {
-    console.error('❌ Failed to compile server.ts:', e);
+  for (const targetDir of targets) {
+    ensureDir(targetDir);
+    fs.copyFileSync(sourceFile, path.join(targetDir, outputName));
   }
 }
 
-// Patch index.html to use bundled app.js
-const indexHtmlPath = path.join(BUILD_DIR, 'index.html');
-if (fs.existsSync(indexHtmlPath)) {
-  let html = fs.readFileSync(indexHtmlPath, 'utf8');
-  // Replace module import with bundled script
-  html = html.replace(
-    /<script type="module" src="\.\/src\/app\.js"><\/script>/,
-    '<script src="./app.js"></script>'
-  );
-  // Fallback if user using old path
-  html = html.replace(
-    /<script src="\.\/app\.js"><\/script>/,
-    '<script src="./app.js"></script>'
-  );
-  fs.writeFileSync(indexHtmlPath, html);
-  console.log('✅ Patched index.html for production');
-}
-
-// Copy additional files
-COPY_FILES.forEach(file => {
-  if (fs.existsSync(file)) {
-    fs.copyFileSync(file, path.join(BUILD_DIR, file));
-    console.log(`✅ Copied ${file}`);
-  }
-});
-
-// Minify CSS (basic minification)
-if (fs.existsSync('styles.css')) {
-  let css = fs.readFileSync('styles.css', 'utf8');
-  // Remove comments and extra whitespace
-  css = css.replace(/\/\*[\s\S]*?\*\//g, '')
+function minifyCss(css) {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\s+/g, ' ')
     .replace(/;\s*}/g, '}')
     .replace(/\s*{\s*/g, '{')
     .replace(/;\s*/g, ';')
     .trim();
-
-  fs.writeFileSync(path.join(BUILD_DIR, 'styles.css'), css);
-  console.log('✅ Minified CSS');
 }
 
-// Create production package.json
+function buildClientBundle() {
+  if (esbuild && fs.existsSync(SRC_DIR) && fs.existsSync(path.join(SRC_DIR, 'app.ts'))) {
+    console.log('Bundling src/app.ts...');
+    const result = esbuild.buildSync({
+      entryPoints: [path.join(SRC_DIR, 'app.ts')],
+      bundle: true,
+      minify: true,
+      write: false,
+      format: 'iife',
+      target: ['es2020'],
+      sourcemap: false,
+    });
+
+    return result.outputFiles[0].text;
+  }
+
+  if (fs.existsSync('app.js')) {
+    const source = fs.readFileSync('app.js', 'utf8');
+    if (!esbuild) {
+      return source;
+    }
+
+    console.log('Minifying existing app.js...');
+    return esbuild.transformSync(source, {
+      minify: true,
+      target: ['es2020'],
+    }).code;
+  }
+
+  throw new Error('Unable to build browser bundle. Neither src/app.ts nor app.js exists.');
+}
+
+if (fs.existsSync(BUILD_DIR)) {
+  fs.rmSync(BUILD_DIR, { recursive: true, force: true });
+  console.log('Cleaned dist/');
+}
+
+ensureDir(BUILD_DIR);
+ensureDir(PUBLIC_DIR);
+
+const clientBundle = buildClientBundle();
+writeFileToTargets('app.js', clientBundle, [BUILD_DIR, PUBLIC_DIR]);
+console.log('Wrote browser bundle to dist/app.js and public/app.js');
+
+copyFileToTargets('index.html', [BUILD_DIR]);
+for (const file of PUBLIC_STATIC_FILES) {
+  copyFileToTargets(file, [BUILD_DIR, PUBLIC_DIR]);
+}
+
+if (fs.existsSync('styles.css')) {
+  const css = minifyCss(fs.readFileSync('styles.css', 'utf8'));
+  writeFileToTargets('styles.css', css, [BUILD_DIR, PUBLIC_DIR]);
+  console.log('Minified styles.css for dist/ and public/');
+}
+
+if (esbuild && fs.existsSync('server.ts')) {
+  console.log('Compiling server.ts...');
+  esbuild.buildSync({
+    entryPoints: ['server.ts'],
+    platform: 'node',
+    outfile: path.join(BUILD_DIR, 'server.js'),
+    target: 'node18',
+    format: 'cjs',
+  });
+  console.log('Compiled dist/server.js');
+}
+
+const indexHtmlPath = path.join(BUILD_DIR, 'index.html');
+if (fs.existsSync(indexHtmlPath)) {
+  let html = fs.readFileSync(indexHtmlPath, 'utf8');
+  html = html.replace(
+    /<script type="module" src="\.\/src\/app\.js"><\/script>/,
+    '<script src="./app.js"></script>'
+  );
+  html = html.replace(
+    /<script src="\.\/app\.js"><\/script>/,
+    '<script src="./app.js"></script>'
+  );
+  fs.writeFileSync(indexHtmlPath, html);
+  console.log('Patched dist/index.html');
+}
+
+for (const file of COPY_FILES) {
+  copyFileToTargets(file, [BUILD_DIR]);
+}
+
 if (fs.existsSync('package.json')) {
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-
-  // Remove dev dependencies and scripts not needed in production
   delete pkg.devDependencies;
   pkg.scripts = {
     start: pkg.scripts.start,
@@ -171,68 +155,34 @@ if (fs.existsSync('package.json')) {
     path.join(BUILD_DIR, 'package.json'),
     JSON.stringify(pkg, null, 2)
   );
-  console.log('✅ Created production package.json');
+  console.log('Created dist/package.json');
 }
 
-// Create deployment instructions
 const deployInstructions = `# Cryptexa Production Deployment
 
-## Quick Deploy
+## Build outputs
+
+- dist/: standalone Node deployment output
+- public/: static assets served by Vercel
+
+## Quick deploy
 
 1. Install dependencies:
-   \`\`\`bash
    npm install --production
-   \`\`\`
-
 2. Set environment variables (see .env.example)
-
 3. Start the application:
-   \`\`\`bash
    npm run prod
-   \`\`\`
 
-## Modular Architecture
+## Notes
 
-The source code has been modularized for better maintainability:
-
-\`\`\`
-src/
-├── crypto/
-│   ├── aes-gcm.js      # Encryption/decryption
-│   ├── pbkdf2.js       # Key derivation
-│   └── index.js        # Crypto exports
-├── state/
-│   ├── ClientState.js  # State management class
-│   └── index.js        # State exports
-├── ui/
-│   ├── dialogs.js      # Dialog management
-│   ├── tabs.js         # Tab management
-│   ├── toast.js        # Notifications
-│   ├── themes.js       # Theme toggling
-│   └── index.js        # UI exports
-├── utils/
-│   ├── fetch.js        # fetchWithRetry, debounce
-│   ├── dom.js          # DOM helpers (qs, qsa, on)
-│   ├── crypto-helpers.js # Crypto utilities
-│   └── index.js        # Utils exports
-└── app.js              # Main entry, orchestration
-\`\`\`
-
-For development, you can work with the modular source in src/.
-The build process bundles everything into a single app.js.
-
-## Files in this build:
-${[...STATIC_FILES, ...COPY_FILES].map(f => `- ${f}`).join('\n')}
+- Vercel requires MongoDB persistence. Set DB_TYPE=mongodb and MONGODB_URI.
+- The browser bundle is generated from src/app.ts when available.
+- index.html stays outside public/ so Express can serve it with runtime headers.
 
 Build created: ${new Date().toISOString()}
 `;
 
 fs.writeFileSync(path.join(BUILD_DIR, 'DEPLOY.md'), deployInstructions);
-console.log('✅ Created deployment instructions');
+console.log('Created dist/DEPLOY.md');
 
-console.log('\n🎉 Production build complete!');
-console.log(`📁 Build output: ${BUILD_DIR}/`);
-console.log('\n📋 Next steps:');
-console.log('1. Review DEPLOY.md for deployment instructions');
-console.log('2. Set up environment variables');
-console.log('3. Deploy to your production environment');
+console.log('Build complete.');

@@ -107,9 +107,9 @@ npm run prod
 - Zero-config deployment
 
 #### Vercel
-- Uses existing `.vercel/project.json`
-- Serverless deployment
-- Global edge network
+- Uses `vercel.json` with the Express framework preset
+- Serves static assets from generated `public/` files during build
+- Requires `DB_TYPE=mongodb` and `MONGODB_URI` because Vercel file storage is not durable
 
 #### Docker
 ```dockerfile
@@ -185,7 +185,7 @@ CMD ["npm", "run", "prod"]
 
 ## Local Development
 
-The server serves the frontend statically and exposes the API under `/api/...`. Data persists in `db.json`.
+The server serves `index.html` directly, exposes the API under `/api/...`, and resolves browser assets from the repo root in development. Production builds generate `public/` for Vercel and `dist/` for traditional Node deployments.
 
 ## Deployment to Render
 
@@ -246,7 +246,7 @@ Default site ID is `local-notes`. To change:
 ```bash
 npm run dev          # Start development server
 npm run prod         # Start production server
-npm run build        # Build for production
+npm run build        # Build dist/ and public/ for deployment
 npm test             # Run tests (placeholder)
 ```
 
