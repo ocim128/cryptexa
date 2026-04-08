@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node dist/server.js",
     "start:win": "set NODE_ENV=production && node dist/server.js",
-    "dev": "set NODE_ENV=development && tsx server.ts",
-    "dev:watch": "set NODE_ENV=development && tsx watch server.ts",
+    "dev": "set NODE_ENV=development && tsx server-app.ts",
+    "dev:watch": "set NODE_ENV=development && tsx watch server-app.ts",
     "prod": "node dist/server.js",
     "build": "node build.js",
     "postinstall": "npm run build",

@@ -65,7 +65,7 @@
     },
     "include": [
         "src/**/*",
-        "server.ts",
+        "server-app.ts",
         "tests/**/*"
     ],
     "exclude": [

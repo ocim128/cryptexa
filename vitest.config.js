@@ -8,7 +8,7 @@ export default defineConfig({
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],
-            include: ['src/**/*.{ts,js}', 'server.ts', 'app.ts'],
+            include: ['src/**/*.{ts,js}', 'server-app.ts', 'app.ts'],
         },
         setupFiles: ['./tests/unit/setup.ts'],
         testTimeout: 10000,

@@ -5,6 +5,7 @@
  * Creates:
  * - dist/ for traditional Node deployments
  * - public/ assets for Vercel static delivery
+ * - dist/server.js as the compiled runtime used by the root server.js wrapper
  */
 
 const fs = require('fs');
@@ -112,10 +113,10 @@ if (fs.existsSync('styles.css')) {
   console.log('Minified styles.css for dist/ and public/');
 }
 
-if (esbuild && fs.existsSync('server.ts')) {
-  console.log('Compiling server.ts...');
+if (esbuild && fs.existsSync('server-app.ts')) {
+  console.log('Compiling server-app.ts...');
   esbuild.buildSync({
-    entryPoints: ['server.ts'],
+    entryPoints: ['server-app.ts'],
     platform: 'node',
     outfile: path.join(BUILD_DIR, 'server.js'),
     target: 'node18',
