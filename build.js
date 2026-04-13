@@ -102,7 +102,7 @@ const clientBundle = buildClientBundle();
 writeFileToTargets('app.js', clientBundle, [BUILD_DIR, PUBLIC_DIR]);
 console.log('Wrote browser bundle to dist/app.js and public/app.js');
 
-copyFileToTargets('index.html', [BUILD_DIR]);
+copyFileToTargets('index.html', [BUILD_DIR, PUBLIC_DIR]);
 for (const file of PUBLIC_STATIC_FILES) {
   copyFileToTargets(file, [BUILD_DIR, PUBLIC_DIR]);
 }
