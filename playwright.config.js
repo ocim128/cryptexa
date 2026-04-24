@@ -40,7 +40,7 @@ module.exports = defineConfig({
             ...process.env,
             PORT,
         },
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: false,
         timeout: 120 * 1000,
     },
 });

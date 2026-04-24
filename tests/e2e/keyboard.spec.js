@@ -15,10 +15,9 @@ test.describe('Keyboard Shortcuts', () => {
     test('should show help with F1 key', async ({ page }) => {
         await page.keyboard.press('F1');
 
-        // Should show notification with shortcuts
-        const notification = page.locator('.notification');
-        await expect(notification).toBeVisible({ timeout: 5000 });
-        await expect(notification).toContainText('Keyboard Shortcuts');
+        const dialog = page.locator('#dialog-help');
+        await expect(dialog).toBeVisible({ timeout: 5000 });
+        await expect(dialog).toContainText('Keyboard shortcuts');
     });
 
     test('should close dialog with Escape key', async ({ page }) => {
@@ -35,6 +34,19 @@ test.describe('Keyboard Shortcuts', () => {
 
         // Dialog should close
         await expect(dialog).toBeHidden();
+    });
+
+    test('should not replace an active modal when F1 is pressed', async ({ page }) => {
+        await page.locator('.textarea-contents').first().fill('Content');
+        await page.locator('#button-save').click();
+
+        const passwordDialog = page.locator('#dialog-new-password');
+        await expect(passwordDialog).toBeVisible();
+
+        await page.keyboard.press('F1');
+
+        await expect(passwordDialog).toBeVisible();
+        await expect(page.locator('#dialog-help')).toBeHidden();
     });
 
     test('should trigger save with Ctrl+S', async ({ page }) => {
@@ -77,6 +89,13 @@ test.describe('Keyboard Shortcuts', () => {
         await expect(page.locator('.tab-header').nth(1)).toHaveClass(/active/);
     });
 
+    test('should open tab switcher with Ctrl+Shift+P', async ({ page }) => {
+        await page.keyboard.press('Control+Shift+P');
+
+        const dialog = page.locator('#tab-switcher-dialog');
+        await expect(dialog).toBeVisible();
+    });
+
     test('should switch to specific tab with Ctrl+1-9', async ({ page }) => {
         // Add tabs
         await page.locator('#add_tab').click();
@@ -108,9 +127,8 @@ test.describe('Help Button', () => {
         const helpButton = page.locator('#help-button');
         await helpButton.click();
 
-        // Should show notification with shortcuts
-        const notification = page.locator('.notification');
-        await expect(notification).toBeVisible({ timeout: 5000 });
-        await expect(notification).toContainText('Keyboard Shortcuts');
+        const dialog = page.locator('#dialog-help');
+        await expect(dialog).toBeVisible({ timeout: 5000 });
+        await expect(dialog).toContainText('Keyboard shortcuts');
     });
 });

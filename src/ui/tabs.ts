@@ -35,6 +35,10 @@ let tabCounter = 1;
 let currentTabTitle: Element | null = null;
 let currentTextarea: HTMLTextAreaElement | null = null;
 
+const TAB_COLOR_METADATA_PREFIX = "__CRYPTEXA_COLOR__:";
+const DEFAULT_TAB_MARK_COLOR = "#d15f38";
+const MOBILE_METADATA_HINT = "Reload this website to hide mobile app metadata!";
+
 // ============================================================================
 // GETTERS
 // ============================================================================
@@ -51,6 +55,75 @@ export function getCurrentTabTitle(): Element | null {
  */
 export function getCurrentTextarea(): HTMLTextAreaElement | null {
     return currentTextarea;
+}
+
+function normalizeTabColor(color: string | null | undefined): string | null {
+    if (!color) return null;
+    const normalized = color.trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(normalized)) return null;
+    return normalized === "#ffffff" ? null : normalized;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+    const normalized = normalizeTabColor(hex);
+    if (!normalized) return `rgba(209, 95, 56, ${alpha})`;
+
+    const r = parseInt(normalized.slice(1, 3), 16);
+    const g = parseInt(normalized.slice(3, 5), 16);
+    const b = parseInt(normalized.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function parseTabPayload(content: string): { color: string | null; content: string } {
+    if (!content.startsWith(TAB_COLOR_METADATA_PREFIX)) {
+        return { color: null, content };
+    }
+
+    const lineEndIndex = content.indexOf("\n");
+    const colorLine = lineEndIndex === -1 ? content : content.substring(0, lineEndIndex);
+    const color = normalizeTabColor(colorLine.substring(TAB_COLOR_METADATA_PREFIX.length));
+    const cleanContent = lineEndIndex === -1 ? "" : content.substring(lineEndIndex + 1);
+
+    return {
+        color,
+        content: cleanContent
+    };
+}
+
+function applyTabColor(header: HTMLElement, color: string | null): void {
+    const normalizedColor = normalizeTabColor(color);
+    if (!normalizedColor) {
+        header.removeAttribute("data-tab-color");
+        header.classList.remove("has-mark");
+        header.style.removeProperty("--tab-mark");
+        header.style.removeProperty("--tab-mark-soft");
+        return;
+    }
+
+    header.dataset.tabColor = normalizedColor;
+    header.classList.add("has-mark");
+    header.style.setProperty("--tab-mark", normalizedColor);
+    header.style.setProperty("--tab-mark-soft", hexToRgba(normalizedColor, 0.14));
+}
+
+function syncTabColorControls(): void {
+    const activeHeader = qs<HTMLElement>(".tab-header.active");
+    const colorPicker = qs<HTMLInputElement>("#tab-color-picker");
+    const clearButton = qs<HTMLButtonElement>("#clear-tab-color");
+    const markControl = qs<HTMLElement>(".tab-mark-control");
+    const activeColor = normalizeTabColor(activeHeader?.dataset.tabColor);
+
+    if (colorPicker) {
+        colorPicker.value = activeColor || DEFAULT_TAB_MARK_COLOR;
+    }
+
+    if (clearButton) {
+        clearButton.disabled = !activeColor;
+    }
+
+    if (markControl) {
+        markControl.classList.toggle("is-marked", Boolean(activeColor));
+    }
 }
 
 // ============================================================================
@@ -102,30 +175,22 @@ export function updateActiveLineHighlight(
     ta: HTMLTextAreaElement,
     editorWrap: Element
 ): void {
-    // Remove existing active line highlights
     const existingHighlights = editorWrap.querySelectorAll('.active-line');
     existingHighlights.forEach(el => el.remove());
 
-    // Get cursor position
     const cursorPos = ta.selectionStart;
     const text = ta.value;
-
-    // Get line number
     const lineNumber = getLineNumberFromPosition(text, cursorPos);
 
-    // Create highlight element
     const highlight = document.createElement('div');
     highlight.className = 'active-line';
 
-    // Calculate position
     const lineHeight = getLineHeight(ta);
     const top = (lineNumber - 1) * lineHeight + parseInt(window.getComputedStyle(ta).paddingTop);
 
-    // Set position and dimensions
     highlight.style.top = `${top}px`;
     highlight.style.height = `${lineHeight}px`;
 
-    // Add to editor wrap
     editorWrap.appendChild(highlight);
 }
 
@@ -136,39 +201,25 @@ export function updateSelectedLinesHighlight(
     ta: HTMLTextAreaElement,
     editorWrap: Element
 ): void {
-    // Remove existing selected line highlights
     const existingHighlights = editorWrap.querySelectorAll('.selected-line');
     existingHighlights.forEach(el => el.remove());
 
-    // Check if there's a selection
     const selectionStart = ta.selectionStart;
     const selectionEnd = ta.selectionEnd;
-
-    if (selectionStart === selectionEnd) return; // No selection
+    if (selectionStart === selectionEnd) return;
 
     const text = ta.value;
-
-    // Get start and end line numbers
     const startLine = getLineNumberFromPosition(text, selectionStart);
     const endLine = getLineNumberFromPosition(text, selectionEnd);
-
-    // Get line height
     const lineHeight = getLineHeight(ta);
     const paddingTop = parseInt(window.getComputedStyle(ta).paddingTop);
 
-    // Create highlight elements for each selected line
     for (let i = startLine; i <= endLine; i++) {
         const highlight = document.createElement('div');
         highlight.className = 'selected-line';
-
-        // Calculate position
         const top = (i - 1) * lineHeight + paddingTop;
-
-        // Set position and dimensions
         highlight.style.top = `${top}px`;
         highlight.style.height = `${lineHeight}px`;
-
-        // Add to editor wrap
         editorWrap.appendChild(highlight);
     }
 }
@@ -186,35 +237,31 @@ export function activateTab(headerLi: Element): void {
     const id = (headerLi as HTMLElement).dataset.tabId;
     const panel = id ? qs(`#${id}`) : null;
 
-    // Use a document fragment-like batching via requestAnimationFrame
-    requestAnimationFrame(() => {
-        headers.forEach(h => h.classList.remove("active"));
-        panels.forEach(p => p.classList.remove("active"));
-        headerLi.classList.add("active");
-        if (panel) panel.classList.add("active");
+    headers.forEach(h => h.classList.remove("active"));
+    panels.forEach(p => p.classList.remove("active"));
+    headerLi.classList.add("active");
+    if (panel) panel.classList.add("active");
+    syncTabColorControls();
 
-        // Defer heavy work to idle time to keep tab switch snappy
-        setTimeout(() => {
-            focusActiveTextarea();
-            const ta = panel?.querySelector<HTMLTextAreaElement>("textarea.textarea-contents");
-            const gutter = panel?.querySelector<HTMLElement>(".line-gutter");
-            if (ta && gutter) {
-                const y = Math.round(ta.scrollTop || 0);
-                gutter.style.setProperty("--gutter-scroll-y", String(-y));
-                gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
-                gutter.style.removeProperty("top");
-                gutter.style.transform = "translateZ(0)";
+    focusActiveTextarea();
 
-                // Lazy line number update for big docs
-                const needsHeavyUpdate = (ta.value && ta.value.length > 50000);
-                if (needsHeavyUpdate) {
-                    setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
-                } else {
-                    updateGutterForTextarea(ta, gutter);
-                }
-            }
-        }, 0);
-    });
+    const ta = panel?.querySelector<HTMLTextAreaElement>("textarea.textarea-contents");
+    const gutter = panel?.querySelector<HTMLElement>(".line-gutter");
+    if (!ta || !gutter) return;
+
+    const y = Math.round(ta.scrollTop || 0);
+    gutter.style.setProperty("--gutter-scroll-y", String(-y));
+    gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
+    gutter.style.removeProperty("top");
+    gutter.style.transform = "translateZ(0)";
+
+    const needsHeavyUpdate = ta.value.length > 50000;
+    if (needsHeavyUpdate) {
+        setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
+        return;
+    }
+
+    updateGutterForTextarea(ta, gutter);
 }
 
 /**
@@ -231,7 +278,6 @@ export function getTitleFromContent(content?: string): string {
 
     if (!effectiveContent) return "Empty Tab";
 
-    // Skip leading whitespace quickly
     let start = 0;
     while (start < effectiveContent.length) {
         const ch = effectiveContent[start];
@@ -240,7 +286,6 @@ export function getTitleFromContent(content?: string): string {
     }
     if (start >= effectiveContent.length) return "Empty Tab";
 
-    // Find end of first line within the capped window
     const nlRel = effectiveContent.indexOf("\n", start);
     const end = nlRel === -1 ? effectiveContent.length : nlRel;
     let title = effectiveContent.substring(start, end);
@@ -271,31 +316,14 @@ export function addTab(
 ): Element {
     const headersContainer = qs(".tab-headers-container")!;
     const id = `tab-${tabCounter++}`;
-
-    // Parse content and color metadata
-    let actualContent = contentIfAvailable;
-    let tabColor: string | null = null;
-
-    // Check if content has color metadata
-    if (contentIfAvailable && contentIfAvailable.startsWith("__CRYPTEXA_COLOR__:")) {
-        const colorEndIndex = contentIfAvailable.indexOf("\n");
-        if (colorEndIndex !== -1) {
-            const colorLine = contentIfAvailable.substring(0, colorEndIndex);
-            tabColor = colorLine.replace("__CRYPTEXA_COLOR__:", "").trim();
-            actualContent = contentIfAvailable.substring(colorEndIndex + 1);
-        }
-    }
+    const parsedPayload = parseTabPayload(contentIfAvailable);
+    const actualContent = parsedPayload.content;
 
     const li = document.createElement("li");
     li.className = "tab-header";
     li.dataset.tabId = id;
     li.draggable = true;
-
-    // Store color in dataset
-    if (tabColor) {
-        li.dataset.tabColor = tabColor;
-        li.style.backgroundColor = tabColor;
-    }
+    applyTabColor(li, parsedPayload.color);
 
     const a = document.createElement("a");
     a.href = `#${id}`;
@@ -305,7 +333,7 @@ export function addTab(
     const span = document.createElement("span");
     span.className = "close";
     span.title = "Remove Tab";
-    span.textContent = "×";
+    span.textContent = String.fromCharCode(215);
 
     li.appendChild(a);
     li.appendChild(span);
@@ -322,7 +350,7 @@ export function addTab(
     panel.innerHTML = `
     <div class="editor-wrap">
       <div class="line-gutter" aria-hidden="true"></div>
-      <textarea rows="1" cols="1" class="textarea-contents" placeholder="your text goes here..."></textarea>
+      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."></textarea>
     </div>`;
     qs("#tabs")!.appendChild(panel);
 
@@ -333,7 +361,6 @@ export function addTab(
         updateGutterForTextarea(ta, gutter);
     };
 
-    // Initial content
     if (actualContent && actualContent.length > 0) {
         ta.value = actualContent;
         a.textContent = getTitleFromContent(actualContent.substring(0, 200));
@@ -341,7 +368,6 @@ export function addTab(
         a.textContent = getTitleFromContent("");
     }
 
-    // Wire updates
     let rafId = 0;
     ta.addEventListener("input", () => {
         if (rafId) cancelAnimationFrame(rafId);
@@ -351,7 +377,6 @@ export function addTab(
         });
     });
 
-    // Sync gutter vertical offset with textarea scroll
     let lastScrollTs = 0;
     ta.addEventListener("scroll", () => {
         const now = performance.now ? performance.now() : Date.now();
@@ -365,7 +390,6 @@ export function addTab(
         gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
     });
 
-    // Ensure initial render
     const isHuge = (ta.value && ta.value.length > 50000);
     if (isHuge) {
         setTimeout(updateGutter, 0);
@@ -373,7 +397,6 @@ export function addTab(
         requestAnimationFrame(updateGutter);
     }
 
-    // Initialize line highlights
     const editorWrap = panel.querySelector(".editor-wrap");
     if (editorWrap) {
         setTimeout(() => {
@@ -399,8 +422,11 @@ export function refreshTabs(): void {
     const headers = qsa(".tab-header");
     headers.forEach(h => {
         const closer = h.querySelector<HTMLElement>(".close");
-        if (closer) closer.style.display = headers.length > 1 ? "" : "none";
+        if (!closer) return;
+        const shouldShow = headers.length > 1 && !h.classList.contains("pinned");
+        closer.style.display = shouldShow ? "" : "none";
     });
+    syncTabColorControls();
     focusActiveTextarea();
 }
 
@@ -419,10 +445,10 @@ function getDragAfterElement(container: Element, x: number): Element | undefined
         const offset = x - box.left - box.width / 2;
 
         if (offset < 0 && offset > closest.offset) {
-            return { offset: offset, element: child };
-        } else {
-            return closest;
+            return { offset, element: child };
         }
+
+        return closest;
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
@@ -470,7 +496,6 @@ export function initTabDragAndDrop(onModified: OnModifiedCallback | null = null)
 
         const afterElement = getDragAfterElement(container, event.clientX);
         const dragging = qs(".tab-header[style*='opacity']");
-
         if (!dragging) return;
 
         if (afterElement == null) {
@@ -482,7 +507,6 @@ export function initTabDragAndDrop(onModified: OnModifiedCallback | null = null)
 
     container.addEventListener("drop", (e) => {
         e.preventDefault();
-
         if (!draggedTab || !draggedPanel) return;
 
         const tabsContainer = qs("#tabs")!;
@@ -513,7 +537,6 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
     const headersContainer = qs(".tab-headers-container");
     if (!headersContainer) return;
 
-    // Single click for tab switching only
     on(headersContainer as HTMLElement, "click", (e) => {
         const event = e as MouseEvent;
         const li = (event.target as Element).closest(".tab-header");
@@ -529,7 +552,6 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
         if (li) activateTab(li);
     });
 
-    // Double click for close button and color picker
     on(headersContainer as HTMLElement, "dblclick", (e) => {
         const event = e as MouseEvent;
         const li = (event.target as Element).closest<HTMLElement>(".tab-header");
@@ -554,7 +576,6 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
                 if (onModified) onModified(true);
                 refreshTabs();
             });
-            return;
         }
     });
 
@@ -563,6 +584,28 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
         on(addTabBtn as HTMLElement, "click", () => {
             const activeTab = qs(".tab-header.active");
             addTab(false, "", activeTab, onModified);
+        });
+    }
+
+    const colorPicker = qs<HTMLInputElement>("#tab-color-picker");
+    if (colorPicker) {
+        on(colorPicker, "input", () => {
+            const activeTab = qs<HTMLElement>(".tab-header.active");
+            if (!activeTab) return;
+            applyTabColor(activeTab, colorPicker.value);
+            syncTabColorControls();
+            if (onModified) onModified(true);
+        });
+    }
+
+    const clearColorBtn = qs<HTMLButtonElement>("#clear-tab-color");
+    if (clearColorBtn) {
+        on(clearColorBtn, "click", () => {
+            const activeTab = qs<HTMLElement>(".tab-header.active");
+            if (!activeTab) return;
+            applyTabColor(activeTab, null);
+            syncTabColorControls();
+            if (onModified) onModified(true);
         });
     }
 
@@ -576,23 +619,6 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
  * Handles window resize
  */
 export function onWindowResize(): void {
-    const menubar = qs<HTMLElement>("#menubar");
-    const outter = qs<HTMLElement>("#main-content-outter");
-    const headers = qs<HTMLElement>(".tab-headers");
-
-    if (!menubar || !outter || !headers) return;
-
-    const top = menubar.getBoundingClientRect().height;
-    outter.style.top = `${top}px`;
-    const h = window.innerHeight - top;
-    outter.style.height = `${h}px`;
-    const panels = qsa<HTMLElement>(".tab-panel");
-    const headerH = headers.getBoundingClientRect().height;
-    panels.forEach(p => {
-        p.style.height = `${Math.max(0, h - headerH)}px`;
-    });
-
-    // Keep gutter scroll offset aligned after resizes
     qsa(".tab-panel").forEach(panel => {
         const ta = panel.querySelector<HTMLTextAreaElement>("textarea.textarea-contents");
         const gutter = panel.querySelector<HTMLElement>(".line-gutter");
@@ -622,15 +648,17 @@ export async function setContentOfTabs(content: string, state: TabState): Promis
     tabCounter = 0;
     for (let i = 0; i < parts.length; i++) {
         const part = parts[i] ?? "";
-        if (part.startsWith("♻ Reload this website to hide mobile app metadata! ♻")) {
+        if (part.includes(MOBILE_METADATA_HINT)) {
             state.setMobileAppMetadataTabContent(part);
         } else {
             addTab(true, part, null, () => state.updateIsTextModified(true));
         }
     }
+
     if (qsa(".tab-header").length === 0) {
         addTab(true, "", null, () => state.updateIsTextModified(true));
     }
+
     const first = qs(".tab-header");
     if (first) activateTab(first);
 }
@@ -648,15 +676,12 @@ export async function getContentFromTabs(state: TabState): Promise<string> {
         if (!header) continue;
         const id = header.dataset.tabId;
         const ta = id ? qs<HTMLTextAreaElement>(`#${id} textarea.textarea-contents`) : null;
-        const tabColor = header.dataset.tabColor;
+        const tabColor = normalizeTabColor(header.dataset.tabColor);
 
         if (i > 0) all += sep;
-
-        // Add color metadata if tab has a color
-        if (tabColor && tabColor !== "#ffffff") {
-            all += `__CRYPTEXA_COLOR__:${tabColor}\n`;
+        if (tabColor) {
+            all += `${TAB_COLOR_METADATA_PREFIX}${tabColor}\n`;
         }
-
         all += ta?.value || "";
     }
 

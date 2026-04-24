@@ -1,36 +1,20 @@
 /*
   Cryptexa - Client-side encrypted notes with server persistence
-  
-  Modular Architecture:
-    - crypto/       - Encryption/decryption (AES-GCM, PBKDF2)
-    - state/        - ClientState management
-    - ui/           - UI components (dialogs, tabs, toast, themes)
-    - utils/        - Utilities (fetch, dom, crypto-helpers)
-  
-  API:
-    GET  /api/json?site=SITE
-      -> { status:"success", isNew, eContent, currentDBVersion, expectedDBVersion, currentHashContent }
-    POST /api/save
-      body: { site, initHashContent, currentHashContent, encryptedContent }
-      -> { status:"success", currentHashContent } | { status:"error", message }
-    POST /api/delete
-      body: { site, initHashContent }
-      -> { status:"success" } | { status:"error", message }
+
+  Source of truth:
+    - index.html: shell markup
+    - styles.css: visual system
+    - src/app.ts: runtime wiring and workspace orchestration
 */
 
-// ============================================================================
-// IMPORTS (ES Modules)
-// ============================================================================
-
-import { debounce } from './utils/fetch.js';
-import { qs, qsa, on, setPasswordMode } from './utils/dom.js';
-import { toast, showNotification } from './ui/toast.js';
-import { openPasswordDialog, openConfirmDialog } from './ui/dialogs.js';
-import { initTheme, wireThemeToggle } from './ui/themes.js';
-import { initKineticBackground, initKineticButtons, replaceLoaderWithKinetic } from './ui/kinetic.js';
-import { initGlobalSearch, openSearch } from './ui/search.js';
-import { initPasswordStrengthIndicators } from './ui/password-strength.js';
-import { initTabSwitcher, setTabModified, clearAllModified } from './ui/tab-switcher.js';
+import { debounce } from "./utils/fetch.js";
+import { qs, qsa, on, setPasswordMode } from "./utils/dom.js";
+import { toast } from "./ui/toast.js";
+import { openPasswordDialog } from "./ui/dialogs.js";
+import { initTheme, wireThemeToggle } from "./ui/themes.js";
+import { initGlobalSearch, openSearch } from "./ui/search.js";
+import { initPasswordStrengthIndicators } from "./ui/password-strength.js";
+import { initTabSwitcher, openTabSwitcher, setTabModified, clearAllModified } from "./ui/tab-switcher.js";
 import {
     initTabsLayout,
     activateTab,
@@ -44,23 +28,18 @@ import {
     getContentFromTabs,
     onWindowResize,
     getCurrentTabTitle
-} from './ui/tabs.js';
-import { ClientState, setTabFunctions } from './state/ClientState.js';
+} from "./ui/tabs.js";
+import { ClientState, setTabFunctions } from "./state/ClientState.js";
 
-// Inject tab functions to avoid circular dependencies
 setTabFunctions({
     focusActiveTextarea,
     getContentFromTabs,
     setContentOfTabs
 });
 
-// ============================================================================
-// TYPE AUGMENTATION
-// ============================================================================
-
 declare global {
     interface Window {
-        state: ClientState;
+        state?: ClientState;
     }
 
     interface HTMLElement {
@@ -68,393 +47,266 @@ declare global {
     }
 }
 
-// ============================================================================
-// CONFIG
-// ============================================================================
+type AppView = "landing" | "workspace";
+
+interface ShortcutDef {
+    keys: string;
+    description: string;
+}
+
+const SHORTCUTS: ShortcutDef[] = [
+    { keys: "Ctrl/Cmd + S", description: "Save workspace" },
+    { keys: "Ctrl/Cmd + Shift + S", description: "Save with new password" },
+    { keys: "Ctrl/Cmd + R", description: "Reload encrypted content" },
+    { keys: "Ctrl/Cmd + Shift + F", description: "Open search" },
+    { keys: "Ctrl/Cmd + Shift + P", description: "Open tab switcher" },
+    { keys: "Ctrl/Cmd + Alt + T", description: "Create new tab" },
+    { keys: "Ctrl/Cmd + Tab", description: "Next tab" },
+    { keys: "Ctrl/Cmd + Shift + Tab", description: "Previous tab" },
+    { keys: "Ctrl/Cmd + 1-9", description: "Jump to tab by number" },
+    { keys: "Ctrl/Cmd + E", description: "Export encrypted backup" },
+    { keys: "Ctrl/Cmd + Shift + G", description: "Toggle theme" },
+    { keys: "F1", description: "Open shortcuts help" },
+    { keys: "Escape", description: "Close dialog or focus editor" }
+];
 
 function getQueryParam(name: string): string | null {
     const url = new URL(window.location.href);
-    const v = url.searchParams.get(name);
-    return v && v.trim().length ? v.trim() : null;
+    const value = url.searchParams.get(name);
+    return value && value.trim().length ? value.trim() : null;
 }
 
-// Prefer path segment /:site; fallback to ?site=; else default
-function getSiteFromURL(): string {
+function getSiteFromURL(): string | null {
     const path = window.location.pathname || "/";
-    // Normalize: remove leading/trailing slashes
-    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-    if (seg && seg !== "api") return seg;
-    const qp = getQueryParam("site");
-    return qp || "local-notes";
+    const segment = path.replace(/^\/+|\/+$/g, "");
+    if (segment && segment !== "api") return segment;
+    return getQueryParam("site");
 }
 
 const SITE_ID = getSiteFromURL();
-
-// Accept either ?password=... or raw ?YourPass (whole querystring as password)
-const URL_PASSWORD = (function (): string | null {
+const URL_PASSWORD = (() => {
     const named = getQueryParam("password");
     if (named) return named;
-    const qs = window.location.search || "";
-    if (qs.startsWith("?") && qs.length > 1 && !qs.includes("=")) {
-        return decodeURIComponent(qs.substring(1));
+    const query = window.location.search || "";
+    if (query.startsWith("?") && query.length > 1 && !query.includes("=")) {
+        return decodeURIComponent(query.substring(1));
     }
     return null;
 })();
 
-// ============================================================================
-// GLOBAL STATE
-// ============================================================================
-
-let state = new ClientState(SITE_ID, URL_PASSWORD);
-window.state = state; // valid for debugging
+let state: ClientState | null = null;
 let ignoreInputEvent = true;
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+let landingInitialized = false;
+let workspaceEventsWired = false;
 
-// ============================================================================
-// KEYBOARD SHORTCUTS
-// ============================================================================
+function getState(): ClientState {
+    if (!state) {
+        throw new Error("Workspace state is not initialized");
+    }
+    return state;
+}
 
-function initKeyboardShortcuts(): void {
-    document.addEventListener('keydown', (e) => {
-        // Skip if user is typing in input fields
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'color') return;
+function setAppView(view: AppView): void {
+    document.body.classList.toggle("view-landing", view === "landing");
+    document.body.classList.toggle("view-workspace", view === "workspace");
+}
 
-        const isCtrl = e.ctrlKey || e.metaKey;
-        const isShift = e.shiftKey;
-        const isAlt = e.altKey;
+function renderShortcutHelp(): void {
+    const container = qs<HTMLElement>("#help-shortcuts");
+    if (!container) return;
 
-        // Ctrl+S: Save
-        if (isCtrl && e.key === 's') {
-            e.preventDefault();
-            document.getElementById('button-save')?.click();
+    container.innerHTML = SHORTCUTS.map((shortcut) => `
+        <div class="shortcut-item">
+            <span class="shortcut-keys">${shortcut.keys}</span>
+            <span class="shortcut-description">${shortcut.description}</span>
+        </div>
+    `).join("");
+}
+
+function openHelpDialog(): void {
+    renderShortcutHelp();
+    const dialog = qs<HTMLDialogElement>("#dialog-help");
+    if (!dialog) return;
+    const blockingDialog = qsa<HTMLDialogElement>("dialog[open]").find((openDialog) => openDialog !== dialog);
+    if (blockingDialog) return;
+    if (!dialog.open) {
+        dialog.showModal();
+    }
+}
+
+function closeTopmostDialog(): boolean {
+    const openDialogs = qsa<HTMLDialogElement>("dialog[open]");
+    const dialog = openDialogs[openDialogs.length - 1];
+    if (!dialog) return false;
+    if (dialog.dataset.lockClose === "true") {
+        dialog.querySelector<HTMLElement>("input, button, textarea, [tabindex]:not([tabindex='-1'])")?.focus();
+        return true;
+    }
+    dialog.close();
+    return true;
+}
+
+function setSiteLabel(siteId: string | null): void {
+    const siteContext = qs<HTMLElement>("#site-context");
+    const siteLabel = qs<HTMLElement>("#site-label");
+    if (!siteContext || !siteLabel) return;
+
+    if (!siteId) {
+        siteContext.classList.add("hidden");
+        siteLabel.textContent = "";
+        return;
+    }
+
+    siteLabel.textContent = siteId;
+    siteContext.classList.remove("hidden");
+}
+
+function navigateToWorkspace(siteId: string): void {
+    const password = getQueryParam("password");
+    let destination = `${window.location.origin}/${encodeURIComponent(siteId)}`;
+    if (password) {
+        destination += `?password=${encodeURIComponent(password)}`;
+    }
+    window.location.href = destination;
+}
+
+function initLanding(): void {
+    if (landingInitialized) return;
+    landingInitialized = true;
+
+    const form = qs<HTMLFormElement>("#landing-form");
+    const input = qs<HTMLInputElement>("#landing-site");
+    if (!form || !input) return;
+
+    on(form, "submit", (event) => {
+        event.preventDefault();
+        const nextSite = (input.value || "").trim();
+        if (!nextSite) {
+            toast("Enter a workspace id.", "warning", 1800);
+            input.focus();
             return;
         }
+        navigateToWorkspace(nextSite);
+    });
+}
 
-        // Ctrl+Alt+T: New Tab
-        if (isCtrl && isAlt && (e.key === 't' || e.key === 'T')) {
-            e.preventDefault();
-            document.getElementById('add_tab')?.click();
-            return;
-        }
+function updateButtonEnablement(isTextModified: boolean, isSiteNew: boolean): void {
+    const workspace = getState();
+    const saveButton = qs<HTMLButtonElement>("#button-save");
+    const saveNewButton = qs<HTMLButtonElement>("#button-savenew");
+    const reloadButton = qs<HTMLButtonElement>("#button-reload");
+    const deleteButton = qs<HTMLButtonElement>("#button-delete");
 
-        // Ctrl+R: Reload
-        if (isCtrl && e.key === 'r') {
-            e.preventDefault();
-            document.getElementById('button-reload')?.click();
-            return;
-        }
+    if (!saveButton || !saveNewButton || !reloadButton || !deleteButton) return;
 
-        // Ctrl+Shift+P: Change Password
-        if (isCtrl && isShift && e.key === 'P') {
-            e.preventDefault();
-            document.getElementById('button-savenew')?.click();
-            return;
-        }
+    saveButton.disabled = !isTextModified;
+    saveNewButton.disabled = Boolean(isSiteNew);
+    reloadButton.disabled = false;
+    deleteButton.disabled = Boolean(isSiteNew);
 
-        // Ctrl+Shift+G: Toggle Theme
-        if (isCtrl && isShift && (e.key === 'g' || e.key === 'G')) {
-            e.preventDefault();
-            document.getElementById('theme-toggle')?.click();
-            return;
-        }
+    if (workspace.getInitialIsNew() === false && isTextModified) {
+        window.onbeforeunload = () => "Unsaved changes will be lost.";
+    } else {
+        window.onbeforeunload = null;
+    }
+}
 
-        // Ctrl+1-9: Switch to tab by number
-        if (isCtrl && e.key >= '1' && e.key <= '9') {
-            e.preventDefault();
-            const tabIndex = parseInt(e.key) - 1;
-            const tabs = document.querySelectorAll('.tab-header');
-            if (tabs[tabIndex]) {
-                (tabs[tabIndex].querySelector('.tab-title') as HTMLElement)?.click();
-            }
-            return;
-        }
+function updateStatusIndicator(status: string, text: string): void {
+    const indicator = qs<HTMLElement>("#status-indicator");
+    const statusText = qs<HTMLElement>(".status-text");
+    if (!indicator || !statusText) return;
 
-        // Ctrl+Tab: Next tab
-        if (isCtrl && e.key === 'Tab' && !isShift) {
-            e.preventDefault();
-            const tabs = document.querySelectorAll('.tab-header');
-            const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
-            const nextIndex = (activeIndex + 1) % tabs.length;
-            (tabs[nextIndex]?.querySelector('.tab-title') as HTMLElement)?.click();
-            return;
-        }
+    indicator.classList.remove("saving", "error", "modified");
+    if (status && status !== "ready") {
+        indicator.classList.add(status);
+    }
+    statusText.textContent = text || "Ready";
+}
 
-        // Ctrl+Shift+Tab: Previous tab
-        if (isCtrl && e.key === 'Tab' && isShift) {
-            e.preventDefault();
-            const tabs = document.querySelectorAll('.tab-header');
-            const activeIndex = Array.from(tabs).findIndex(tab => tab.classList.contains('active'));
-            const prevIndex = activeIndex === 0 ? tabs.length - 1 : activeIndex - 1;
-            (tabs[prevIndex]?.querySelector('.tab-title') as HTMLElement)?.click();
-            return;
-        }
+function updateLastSaved(): void {
+    const lastSaved = qs<HTMLElement>("#last-saved");
+    if (!lastSaved) return;
 
-        // F1: Show keyboard shortcuts help
-        if (e.key === 'F1') {
-            e.preventDefault();
-            showKeyboardShortcutsHelp();
-            return;
-        }
+    const now = new Date();
+    lastSaved.textContent = `Saved ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    lastSaved.classList.remove("hidden");
+}
 
-        // Escape: Close dialogs or focus textarea
-        if (e.key === 'Escape') {
-            const openDialog = document.querySelector('dialog[open]') as HTMLDialogElement;
-            if (openDialog) {
-                openDialog.close();
-            } else {
-                focusActiveTextarea();
-            }
-            return;
+function hideLastSaved(): void {
+    const lastSaved = qs<HTMLElement>("#last-saved");
+    lastSaved?.classList.add("hidden");
+}
+
+function setupStatusTracking(): void {
+    document.addEventListener("input", (event) => {
+        if (!(event.target instanceof HTMLTextAreaElement)) return;
+        if (!event.target.classList.contains("textarea-contents")) return;
+
+        updateStatusIndicator("modified", "Modified");
+        hideLastSaved();
+
+        const panel = event.target.closest(".tab-panel");
+        if (!panel) return;
+        const header = document.querySelector<HTMLElement>(`.tab-header[data-tab-id="${panel.id}"]`);
+        if (header) {
+            setTabModified(header, true);
         }
     });
 }
 
-function showKeyboardShortcutsHelp(): void {
-    const shortcuts = [
-        { keys: 'Ctrl+S', desc: 'Save notes' },
-        { keys: 'Ctrl+Alt+T', desc: 'New tab' },
-        { keys: 'Ctrl+P', desc: 'Quick tab switcher' },
-        { keys: 'Ctrl+R', desc: 'Reload from server' },
-        { keys: 'Ctrl+Shift+F', desc: 'Global search' },
-        { keys: 'Ctrl+1-9', desc: 'Switch to tab by number' },
-        { keys: 'Ctrl+Tab', desc: 'Next tab' },
-        { keys: 'Ctrl+Shift+Tab', desc: 'Previous tab' },
-        { keys: 'Ctrl+Shift+P', desc: 'Change password' },
-        { keys: 'Ctrl+Shift+G', desc: 'Toggle theme' },
-        { keys: 'F1', desc: 'Show this help' },
-        { keys: 'Escape', desc: 'Close dialogs or focus editor' }
-    ];
-
-    const helpText = shortcuts.map(s => `<strong>${s.keys}</strong>: ${s.desc}`).join('<br>');
-    showNotification(`<div style="text-align: left; line-height: 1.6;"><strong>🚀 Keyboard Shortcuts</strong><br><br>${helpText}</div>`, 'info', 8000);
-}
-
-// ============================================================================
-// ERROR HANDLING & HEALTH MONITORING
-// ============================================================================
-
-window.addEventListener('error', (event) => {
-    console.error('Global error:', event.error);
-    showNotification('An unexpected error occurred. Please refresh the page.', 'error');
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-    console.error('Unhandled promise rejection:', event.reason);
-    showNotification('A network or processing error occurred. Please try again.', 'error');
-    event.preventDefault();
-});
-
-// Performance monitoring
-if ('performance' in window) {
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            const perfData = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-            if (perfData) {
-                console.log('Page load time:', Math.round(perfData.loadEventEnd - perfData.fetchStart), 'ms');
-            }
-        }, 0);
-    });
-}
-
-// Health check function
 async function checkServerHealth(): Promise<boolean> {
     try {
-        const response = await fetch('/health', { method: 'GET' });
+        const response = await fetch("/health", { method: "GET" });
         return response.ok;
     } catch {
         return false;
     }
 }
 
-// Periodic health check (every 5 minutes)
 function startHealthMonitoring(): void {
+    if (healthCheckInterval) return;
+
     healthCheckInterval = setInterval(async () => {
         const isHealthy = await checkServerHealth();
         if (!isHealthy) {
-            showNotification('Connection to server lost. Please check your internet connection.', 'warning');
+            toast("Connection check failed.", "warning", 2400);
         }
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 5 * 60 * 1000);
 }
 
-// Stop health monitoring
-// eslint-disable-next-line no-unused-vars
 export function stopHealthMonitoring(): void {
-    if (healthCheckInterval) {
-        clearInterval(healthCheckInterval);
-        healthCheckInterval = null;
-    }
-}
-// Expose for manual debugging
-(window as any).stopHealthMonitoring = stopHealthMonitoring;
-
-// ============================================================================
-// BUTTON ENABLEMENT
-// ============================================================================
-
-function updateButtonEnablement(isTextModified: boolean, isSiteNew: boolean): void {
-    const bSave = qs<HTMLButtonElement>("#button-save");
-    const bSaveNew = qs<HTMLButtonElement>("#button-savenew");
-    const bReload = qs<HTMLButtonElement>("#button-reload");
-    const bDelete = qs<HTMLButtonElement>("#button-delete");
-
-    if (!bSave || !bSaveNew || !bReload || !bDelete) return;
-
-    bSave.disabled = !isTextModified;
-    if (state.getInitialIsNew() === false && isTextModified) {
-        window.onbeforeunload = () => "If you don't 'Save', you'll lose your changes.";
-    } else {
-        window.onbeforeunload = null;
-    }
-
-    bSaveNew.disabled = !!isSiteNew === true;
-    bReload.disabled = false;
-    bDelete.disabled = !!isSiteNew === true;
+    if (!healthCheckInterval) return;
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
 }
 
-// ============================================================================
-// STATUS INDICATOR
-// ============================================================================
+function handleGlobalErrors(): void {
+    window.addEventListener("error", (event) => {
+        console.error("Global error:", event.error);
+        toast("Unexpected error. Refresh the page if the workspace becomes unstable.", "error", 3200);
+    });
 
-const updateStatusIndicator = (status: string, text: string): void => {
-    const indicator = qs("#status-indicator");
-    const statusText = qs(".status-text");
-    if (!indicator || !statusText) return;
-    indicator.classList.remove("saving", "error", "modified");
-    if (status && status !== "ready") indicator.classList.add(status);
-    statusText.textContent = text || "Ready";
-};
-
-const updateLastSaved = (): void => {
-    const lastSavedElement = qs<HTMLElement>("#last-saved");
-    if (!lastSavedElement) return;
-
-    const now = new Date();
-    const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    lastSavedElement.textContent = `Last saved: ${timeString}`;
-    lastSavedElement.style.display = 'inline';
-};
-
-const hideLastSaved = (): void => {
-    const lastSavedElement = qs<HTMLElement>("#last-saved");
-    if (lastSavedElement) {
-        lastSavedElement.style.display = 'none';
-    }
-};
-
-// Listen for text changes to update status and per-tab modification
-document.addEventListener("input", e => {
-    if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
-        updateStatusIndicator("modified", "Modified");
-        hideLastSaved();
-
-        // Mark the current tab as modified
-        const panel = e.target.closest('.tab-panel');
-        if (panel) {
-            const tabId = panel.id;
-            const header = document.querySelector<HTMLElement>(`.tab-header[data-tab-id="${tabId}"]`);
-            if (header) {
-                setTabModified(header, true);
-            }
-        }
-    }
-});
-
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
-
-async function initSite(): Promise<void> {
-    // Optional auto-decrypt via ?password=...
-    if (!state.getIsNew() && URL_PASSWORD) {
-        const ok = await state.setLoginPasswordAndContentIfCorrect(URL_PASSWORD);
-        if (ok) {
-            finishInitialization();
-            return;
-        }
-    }
-
-    if (state.getIsNew()) {
-        await setContentOfTabs("", state);
-        finishInitialization();
-    } else {
-        decryptContentAndFinishInitialization(false);
-    }
+    window.addEventListener("unhandledrejection", (event) => {
+        console.error("Unhandled promise rejection:", event.reason);
+        toast("Request failed. Check the connection and try again.", "error", 3200);
+        event.preventDefault();
+    });
 }
-
-async function finishInitialization(shouldSkipSettingContent?: boolean): Promise<void> {
-    state.setInitHashContent();
-    updateButtonEnablement(state.getIsTextModified(), state.getIsNew());
-    focusActiveTextarea();
-    ignoreInputEvent = true;
-    if (shouldSkipSettingContent !== true) {
-        setContentOfTabs(state.getContent(), state);
-    } else {
-        // This is called after a successful save - clear per-tab modification indicators
-        clearAllModified();
-    }
-    setTimeout(() => { ignoreInputEvent = false; }, 50);
-
-    // Hint: mark huge tabs to avoid costly styles or scripts if needed
-    try {
-        const panel = qs<HTMLElement>(".tab-panel.active");
-        const ta = panel && panel.querySelector<HTMLTextAreaElement>("textarea.textarea-contents");
-        if (ta) {
-            const isHuge = (ta.value && ta.value.length > 50000);
-            if (panel) panel.dataset.huge = isHuge ? "1" : "";
-        }
-    } catch {
-        void 0;
-    }
-}
-
-function decryptContentAndFinishInitialization(isOld: boolean): void {
-    const openPrompt = () => {
-        // Hide UI until authenticated to avoid exposing content
-        openPasswordDialog({
-            obscure: true,
-            hideUI: true,
-            onOk: async (pass: string): Promise<boolean> => {
-                if (pass == null) { focusActiveTextarea(); return false; }
-                const ok = await state.setLoginPasswordAndContentIfCorrect(pass);
-                if (ok) {
-                    finishInitialization();
-                    return true; // close dialog (setPasswordMode(false) handled in openPasswordDialog)
-                }
-                // wrong password: keep dialog open
-                return false;
-            }
-        });
-    };
-
-    if (isOld === true) {
-        state.setLoginPasswordAndContentIfCorrect(state.getPassword()).then(ok => {
-            if (!ok) openPrompt();
-            else finishInitialization();
-        });
-    } else {
-        openPrompt();
-    }
-}
-
-// ============================================================================
-// EXPORT ENCRYPTED BACKUP
-// ============================================================================
 
 function exportEncryptedBackup(eContent: string): void {
-    // Produce a minimal HTML that only contains a small decryptor for saltHex:ivHex:cipherHex
-    const title = `Cryptexa Encrypted Backup (${SITE_ID})`;
+    const siteId = SITE_ID || "workspace";
+    const title = `Cryptexa Encrypted Backup (${siteId})`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
 <body>
 <h3>${title}</h3>
-<p>Enter password to decrypt this backup locally (no network):</p>
+<p>Enter password to decrypt this backup locally. No network is required.</p>
 <input type="password" id="pw" placeholder="Password"/>
 <button id="dec">Decrypt</button>
 <pre id="out" style="white-space:pre-wrap;margin-top:12px;"></pre>
 <script>
 const textEncoder = new TextEncoder(); const textDecoder = new TextDecoder();
 function hexToBuf(hex){const len=hex.length/2;const out=new Uint8Array(len);for(let i=0;i<len;i++)out[i]=parseInt(hex.substr(i*2,2),16);return out.buffer;}
-function bufToHex(buf){const arr=new Uint8Array(buf);let s="";for(let i=0;i<arr.length;i++)s+=arr[i].toString(16).padStart(2,"0");return s;}
 async function pbkdf2KeyFromPassword(password, saltHex, iterations=150000){
   const salt=hexToBuf(saltHex);
   const baseKey=await crypto.subtle.importKey("raw", textEncoder.encode(password), {name:"PBKDF2"}, false, ["deriveKey"]);
@@ -475,406 +327,435 @@ document.getElementById("dec").onclick=async()=>{
     const plain=await aesGcmDecryptHex(ivHex,cipherHex,pw,saltHex);
     document.getElementById("out").textContent=plain;
   }catch(e){
-    document.getElementById("out").textContent="Decryption failed (wrong password?)";
+    document.getElementById("out").textContent="Decryption failed.";
   }
 };
-<${'/'}script>
+<${"/"}script>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cryptexa-backup-${SITE_ID}.html`;
-    document.body.appendChild(a);
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `cryptexa-backup-${siteId}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
     URL.revokeObjectURL(url);
-    a.remove();
+    anchor.remove();
 }
 
-// ============================================================================
-// EVENT WIRING
-// ============================================================================
+function triggerExport(): void {
+    const workspace = getState();
+    const encrypted = workspace.remote.eContent;
+    if (!encrypted) {
+        toast("Nothing to export yet.", "warning", 1400);
+        return;
+    }
+    exportEncryptedBackup(encrypted);
+}
 
-function wireEvents(): void {
-    // Coalesce textarea input updates with rAF to reduce layout thrash
+function cycleTabs(direction: 1 | -1): void {
+    const headers = qsa<HTMLElement>(".tab-header");
+    if (headers.length === 0) return;
+
+    const activeIndex = headers.findIndex((tab) => tab.classList.contains("active"));
+    const nextIndex = activeIndex === -1
+        ? 0
+        : (activeIndex + direction + headers.length) % headers.length;
+    const target = headers[nextIndex];
+    if (target) activateTab(target);
+}
+
+function jumpToTabByNumber(index: number): void {
+    const headers = qsa<HTMLElement>(".tab-header");
+    const target = headers[index];
+    if (target) activateTab(target);
+}
+
+function createNewTab(): void {
+    addTab(false, "", qs(".tab-header.active"), () => getState().updateIsTextModified(true));
+}
+
+function triggerSave(forceNewPassword: boolean): void {
+    const workspace = getState();
+    if (!forceNewPassword && !workspace.getIsNew()) {
+        updateStatusIndicator("saving", "Saving");
+    }
+    void workspace.saveSite(forceNewPassword || workspace.getIsNew());
+}
+
+function isFormField(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === "TEXTAREA") return false;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "OPTION") return true;
+    return target.isContentEditable;
+}
+
+function initKeyboardShortcuts(): void {
+    document.addEventListener("keydown", (event) => {
+        const key = event.key;
+        const keyLower = key.toLowerCase();
+        const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+
+        if (key === "F1") {
+            event.preventDefault();
+            openHelpDialog();
+            return;
+        }
+
+        if (key === "Escape") {
+            event.preventDefault();
+            if (!closeTopmostDialog()) {
+                focusActiveTextarea();
+            }
+            return;
+        }
+
+        if (!document.body.classList.contains("view-workspace") || !state) {
+            return;
+        }
+
+        const openDialogs = qsa<HTMLDialogElement>("dialog[open]");
+        const formField = isFormField(event.target);
+
+        if (openDialogs.length > 0) {
+            return;
+        }
+
+        if (formField && !isCtrlOrCmd) {
+            return;
+        }
+
+        if (isCtrlOrCmd && event.shiftKey && keyLower === "s") {
+            event.preventDefault();
+            triggerSave(true);
+            return;
+        }
+
+        if (isCtrlOrCmd && keyLower === "s") {
+            event.preventDefault();
+            triggerSave(false);
+            return;
+        }
+
+        if (isCtrlOrCmd && keyLower === "r" && !event.shiftKey) {
+            event.preventDefault();
+            void getState().reloadSite();
+            return;
+        }
+
+        if (isCtrlOrCmd && event.shiftKey && keyLower === "f") {
+            event.preventDefault();
+            openSearch();
+            return;
+        }
+
+        if (isCtrlOrCmd && event.shiftKey && keyLower === "p") {
+            event.preventDefault();
+            openTabSwitcher();
+            return;
+        }
+
+        if (isCtrlOrCmd && event.altKey && keyLower === "t") {
+            event.preventDefault();
+            createNewTab();
+            return;
+        }
+
+        if (isCtrlOrCmd && keyLower === "e") {
+            event.preventDefault();
+            triggerExport();
+            return;
+        }
+
+        if (isCtrlOrCmd && event.shiftKey && keyLower === "g") {
+            event.preventDefault();
+            qs<HTMLButtonElement>("#theme-toggle")?.click();
+            return;
+        }
+
+        if (isCtrlOrCmd && key >= "1" && key <= "9") {
+            event.preventDefault();
+            jumpToTabByNumber(parseInt(key, 10) - 1);
+            return;
+        }
+
+        if (isCtrlOrCmd && key === "Tab" && !event.shiftKey) {
+            event.preventDefault();
+            cycleTabs(1);
+            return;
+        }
+
+        if (isCtrlOrCmd && key === "Tab" && event.shiftKey) {
+            event.preventDefault();
+            cycleTabs(-1);
+        }
+    });
+}
+
+function wireWorkspaceButtons(): void {
+    on(qs("#button-save") as HTMLElement, "click", () => triggerSave(false));
+    on(qs("#button-savenew") as HTMLElement, "click", () => triggerSave(true));
+    on(qs("#button-reload") as HTMLElement, "click", () => {
+        void getState().reloadSite();
+    });
+    on(qs("#button-delete") as HTMLElement, "click", () => {
+        void getState().deleteSite();
+    });
+    on(qs("#button-export") as HTMLElement, "click", triggerExport);
+    on(qs("#search-button") as HTMLElement, "click", openSearch);
+    on(qs("#help-button") as HTMLElement, "click", openHelpDialog);
+}
+
+function wireWorkspaceEvents(): void {
+    if (workspaceEventsWired) return;
+    workspaceEventsWired = true;
+
     let pendingRaf = 0;
-    document.addEventListener("input", (e) => {
-        if (!(e.target instanceof HTMLTextAreaElement)) return;
-        if (!e.target.classList.contains("textarea-contents")) return;
-        if (ignoreInputEvent) { e.preventDefault(); return; }
+
+    document.addEventListener("input", (event) => {
+        if (!(event.target instanceof HTMLTextAreaElement)) return;
+        if (!event.target.classList.contains("textarea-contents")) return;
+        if (ignoreInputEvent || !state) return;
+
         state.updateIsTextModified(true);
 
-        const ta = e.target;
-        const currentTabTitle = getCurrentTabTitle();
+        const textarea = event.target;
+        const activeTabTitle = getCurrentTabTitle();
 
         if (pendingRaf) cancelAnimationFrame(pendingRaf);
         pendingRaf = requestAnimationFrame(() => {
             pendingRaf = 0;
 
-            // Title update guard: only compute when caret near start and content not too large
             try {
-                const start = ta.selectionStart;
-                const isHuge = (ta.value && ta.value.length > 50000);
-                if (!isHuge && start <= 201 && currentTabTitle) {
-                    currentTabTitle.textContent = getTitleFromContent(ta.value.substring(0, 200));
+                const start = textarea.selectionStart;
+                const isHuge = textarea.value.length > 50000;
+                if (!isHuge && start <= 201 && activeTabTitle) {
+                    activeTabTitle.textContent = getTitleFromContent(textarea.value.substring(0, 200));
                 }
             } catch {
                 void 0;
             }
 
-            // Gutter update throttling for large notes: avoid per-keystroke full regen
-            const panel = ta.closest(".tab-panel") as HTMLElement;
-            const gutter = panel && panel.querySelector<HTMLElement>(".line-gutter");
-            const editorWrap = panel && panel.querySelector(".editor-wrap");
+            const panel = textarea.closest(".tab-panel") as HTMLElement | null;
+            const gutter = panel?.querySelector<HTMLElement>(".line-gutter") || null;
+            const editorWrap = panel?.querySelector(".editor-wrap") || null;
             if (gutter) {
-                const isHuge = (ta.value && ta.value.length > 50000);
+                const isHuge = textarea.value.length > 50000;
                 if (isHuge) {
-                    // Only adjust scroll transform now; regenerate line numbers debounced
-                    const y = Math.round(ta.scrollTop || 0);
+                    const y = Math.round(textarea.scrollTop || 0);
                     gutter.style.setProperty("--gutter-scroll-y", String(-y));
                     gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
                     gutter.style.removeProperty("top");
                     gutter.style.transform = "translateZ(0)";
 
                     if (!gutter._lnDebounce) {
-                        gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
+                        gutter._lnDebounce = debounce(() => updateGutterForTextarea(textarea, gutter), 120);
                     }
                     gutter._lnDebounce();
                 } else {
-                    updateGutterForTextarea(ta, gutter);
+                    updateGutterForTextarea(textarea, gutter);
                 }
             }
 
-            // Update line highlights
             if (editorWrap) {
-                updateActiveLineHighlight(ta, editorWrap);
-                updateSelectedLinesHighlight(ta, editorWrap);
+                updateActiveLineHighlight(textarea, editorWrap);
+                updateSelectedLinesHighlight(textarea, editorWrap);
             }
         });
     });
 
-    // Handle cursor movement and selection changes
     document.addEventListener("selectionchange", () => {
-        const ta = document.activeElement;
-        if (!(ta instanceof HTMLTextAreaElement)) return;
-        if (!ta.classList.contains("textarea-contents")) return;
+        const textarea = document.activeElement;
+        if (!(textarea instanceof HTMLTextAreaElement)) return;
+        if (!textarea.classList.contains("textarea-contents")) return;
 
-        const panel = ta.closest(".tab-panel");
-        const editorWrap = panel && panel.querySelector(".editor-wrap");
-        if (editorWrap) {
-            updateActiveLineHighlight(ta, editorWrap);
-            updateSelectedLinesHighlight(ta, editorWrap);
-        }
+        const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+        if (!editorWrap) return;
+        updateActiveLineHighlight(textarea, editorWrap);
+        updateSelectedLinesHighlight(textarea, editorWrap);
     });
 
-    // Handle mouseup events (for when user selects text with mouse)
-    document.addEventListener("mouseup", (e) => {
-        if (!(e.target instanceof HTMLTextAreaElement)) return;
-        if (!e.target.classList.contains("textarea-contents")) return;
+    document.addEventListener("mouseup", (event) => {
+        if (!(event.target instanceof HTMLTextAreaElement)) return;
+        if (!event.target.classList.contains("textarea-contents")) return;
 
-        const ta = e.target;
-        const panel = ta.closest(".tab-panel");
-        const editorWrap = panel && panel.querySelector(".editor-wrap");
-        if (editorWrap) {
-            // Small delay to ensure selection is updated
-            setTimeout(() => {
-                updateActiveLineHighlight(ta, editorWrap);
-                updateSelectedLinesHighlight(ta, editorWrap);
-            }, 0);
-        }
-    });
-
-    document.addEventListener("paste", (e) => {
-        if (!(e.target instanceof HTMLTextAreaElement)) return;
-        if (!e.target.classList.contains("textarea-contents")) return;
-        const currentTabTitle = getCurrentTabTitle();
+        const textarea = event.target;
+        const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+        if (!editorWrap) return;
         setTimeout(() => {
-            const ta = e.target as HTMLTextAreaElement;
-            const isHuge = (ta.value && ta.value.length > 50000);
-            if (!isHuge && currentTabTitle) {
-                currentTabTitle.textContent = getTitleFromContent();
+            updateActiveLineHighlight(textarea, editorWrap);
+            updateSelectedLinesHighlight(textarea, editorWrap);
+        }, 0);
+    });
+
+    document.addEventListener("paste", (event) => {
+        if (!(event.target instanceof HTMLTextAreaElement)) return;
+        if (!event.target.classList.contains("textarea-contents")) return;
+
+        const activeTabTitle = getCurrentTabTitle();
+        setTimeout(() => {
+            const textarea = event.target as HTMLTextAreaElement;
+            const isHuge = textarea.value.length > 50000;
+            if (!isHuge && activeTabTitle) {
+                activeTabTitle.textContent = getTitleFromContent();
             }
-            // Deferred gutter update after paste
-            const panel = ta.closest(".tab-panel");
-            const gutter = panel && panel.querySelector<HTMLElement>(".line-gutter");
-            if (gutter) {
-                if (isHuge) {
-                    if (!gutter._lnDebounce) {
-                        gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
-                    }
-                    gutter._lnDebounce();
-                } else {
-                    updateGutterForTextarea(ta, gutter);
+
+            const gutter = textarea.closest(".tab-panel")?.querySelector<HTMLElement>(".line-gutter") || null;
+            if (!gutter) return;
+            if (isHuge) {
+                if (!gutter._lnDebounce) {
+                    gutter._lnDebounce = debounce(() => updateGutterForTextarea(textarea, gutter), 120);
                 }
+                gutter._lnDebounce();
+            } else {
+                updateGutterForTextarea(textarea, gutter);
             }
         }, 50);
     });
 
-    // Tab inserts 4 spaces
-    document.addEventListener("keydown", (e) => {
-        const ta = document.activeElement as HTMLTextAreaElement;
-        const isTextarea = ta && ta.classList && ta.classList.contains("textarea-contents");
-        const key = e.key || e.code;
-        if (isTextarea && key === "Tab" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-            e.preventDefault();
-            const start = ta.selectionStart;
-            const end = ta.selectionEnd;
-            const val = ta.value;
-            ta.value = val.substring(0, start) + "    " + val.substring(end);
-            ta.selectionStart = ta.selectionEnd = start + 4;
-            state.updateIsTextModified(true);
+    document.addEventListener("keydown", (event) => {
+        const textarea = document.activeElement;
+        if (!(textarea instanceof HTMLTextAreaElement)) return;
+        if (!textarea.classList.contains("textarea-contents")) return;
+        if (event.key !== "Tab" || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+
+        event.preventDefault();
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const value = textarea.value;
+        textarea.value = value.substring(0, start) + "    " + value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 4;
+        getState().updateIsTextModified(true);
+    });
+
+}
+
+async function initSite(): Promise<void> {
+    const workspace = getState();
+
+    if (!workspace.getIsNew() && URL_PASSWORD) {
+        const success = await workspace.setLoginPasswordAndContentIfCorrect(URL_PASSWORD);
+        if (success) {
+            await finishInitialization();
             return;
         }
-    });
+    }
 
-    // Password input Enter key handling
-    on(qs("#enterpassword") as HTMLElement, "keypress", (e) => {
-        const event = e as KeyboardEvent;
-        if (event.which === 13 || event.key === "Enter") {
-            event.preventDefault();
-            const decryptButton = qs("#dialog-password button[value='ok']") as HTMLButtonElement;
-            if (decryptButton && !decryptButton.disabled) {
-                decryptButton.click();
+    if (workspace.getIsNew()) {
+        await setContentOfTabs("", workspace);
+        await finishInitialization();
+        return;
+    }
+
+    decryptContentAndFinishInitialization(false);
+}
+
+async function finishInitialization(shouldSkipSettingContent?: boolean): Promise<void> {
+    const workspace = getState();
+
+    workspace.setInitHashContent();
+    updateButtonEnablement(workspace.getIsTextModified(), workspace.getIsNew());
+    updateStatusIndicator("ready", "Ready");
+    focusActiveTextarea();
+    ignoreInputEvent = true;
+
+    if (shouldSkipSettingContent !== true) {
+        await setContentOfTabs(workspace.getContent(), workspace);
+    } else {
+        clearAllModified();
+    }
+
+    setTimeout(() => {
+        ignoreInputEvent = false;
+    }, 50);
+}
+
+function decryptContentAndFinishInitialization(isOld: boolean): void {
+    const workspace = getState();
+    const openPrompt = () => {
+        openPasswordDialog({
+            obscure: true,
+            hideUI: true,
+            onOk: async (password: string): Promise<boolean> => {
+                if (password == null) return false;
+                const success = await workspace.setLoginPasswordAndContentIfCorrect(password);
+                if (success) {
+                    await finishInitialization();
+                    return true;
+                }
+                return false;
             }
-        }
-    });
-
-    // New password confirmation Enter key handling
-    on(qs("#newpassword2") as HTMLElement, "keypress", (e) => {
-        const event = e as KeyboardEvent;
-        if (event.which === 13 || event.key === "Enter") {
-            const saveButton = qs("#dialog-new-password button[value='ok']") as HTMLButtonElement;
-            if (saveButton) {
-                saveButton.click();
-            }
-            event.preventDefault();
-        }
-    });
-
-    // Buttons
-    on(qs("#button-save") as HTMLElement, "click", () => state.saveSite(state.getIsNew()));
-    on(qs("#button-savenew") as HTMLElement, "click", () => state.saveSite(true));
-    on(qs("#button-reload") as HTMLElement, "click", () => state.reloadSite());
-    on(qs("#button-delete") as HTMLElement, "click", () => {
-        openConfirmDialog("#dialog-confirm-delete-site", async (ok) => {
-            if (ok) state.deleteSite();
-            else focusActiveTextarea();
         });
-    });
+    };
 
-    // Help button
-    on(qs("#help-button") as HTMLElement, "click", () => {
-        showKeyboardShortcutsHelp();
-    });
-
-    // Keyboard shortcuts
-    setupKeyboardShortcuts();
-
-    // Backup export button (visible before decrypt) - avoid duplicate creation
-    if (!qs("#button-export")) {
-        const backupBtn = document.createElement("button");
-        backupBtn.id = "button-export";
-        backupBtn.textContent = "Export Encrypted Backup";
-        backupBtn.title = "Download encrypted backup (before decrypt)";
-        backupBtn.className = "";
-        qs("#menubar-buttons")?.appendChild(backupBtn);
-        on(backupBtn, "click", () => {
-            const eContent = state.remote.eContent;
-            if (!eContent) {
-                toast("Nothing to export yet", "warning", 1200);
+    if (isOld) {
+        void workspace.setLoginPasswordAndContentIfCorrect(workspace.getPassword()).then(async (success) => {
+            if (!success) {
+                openPrompt();
                 return;
             }
-            exportEncryptedBackup(eContent);
+            await finishInitialization();
         });
+        return;
     }
+
+    openPrompt();
 }
 
-// Additional keyboard shortcuts setup
-function setupKeyboardShortcuts(): void {
-    document.addEventListener("keydown", (e) => {
-        // Skip if user is typing in an input field (except textarea)
-        const target = e.target as HTMLElement;
-        if (target.tagName === "INPUT" && (target as HTMLInputElement).type !== "textarea") return;
+async function bootstrapWorkspace(): Promise<void> {
+    if (!SITE_ID) {
+        setAppView("landing");
+        setSiteLabel(null);
+        initLanding();
+        return;
+    }
 
-        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-        const key = e.key.toLowerCase();
+    setAppView("workspace");
+    setSiteLabel(SITE_ID);
 
-        // Ctrl/Cmd + R: Reload
-        if (isCtrlOrCmd && key === "r" && !e.shiftKey) {
-            e.preventDefault();
-            if (!(qs("#button-reload") as HTMLButtonElement).disabled) {
-                state.reloadSite();
-            }
-            return;
-        }
+    state = new ClientState(SITE_ID, URL_PASSWORD);
+    window.state = state;
 
-        // Ctrl/Cmd + T: New Tab (but not Ctrl+Alt+T which is handled separately)
-        if (isCtrlOrCmd && key === "t" && !e.altKey) {
-            e.preventDefault();
-            addTab(false, "", null, () => state.updateIsTextModified(true));
-            return;
-        }
-
-        // Ctrl/Cmd + W: Close Tab (if more than one tab)
-        if (isCtrlOrCmd && key === "w") {
-            const headers = qsa(".tab-header");
-            if (headers.length > 1) {
-                e.preventDefault();
-                const activeHeader = qs(".tab-header.active");
-                if (activeHeader) {
-                    const closeBtn = activeHeader.querySelector(".close") as HTMLElement;
-                    if (closeBtn) closeBtn.click();
-                }
-            }
-            return;
-        }
-
-        // Ctrl/Cmd + Shift + S: Save with new password
-        if (isCtrlOrCmd && e.shiftKey && key === "s") {
-            e.preventDefault();
-            if (!(qs("#button-savenew") as HTMLButtonElement).disabled) {
-                state.saveSite(true);
-            }
-            return;
-        }
-
-        // Ctrl/Cmd + E: Export encrypted backup
-        if (isCtrlOrCmd && key === "e") {
-            e.preventDefault();
-            (qs("#button-export") as HTMLButtonElement)?.click();
-            return;
-        }
-
-        // Ctrl/Cmd + 1-9: Switch to tab by number
-        if (isCtrlOrCmd && key >= "1" && key <= "9") {
-            e.preventDefault();
-            const tabIndex = parseInt(key) - 1;
-            const headers = qsa(".tab-header");
-            if (headers[tabIndex]) {
-                activateTab(headers[tabIndex]);
-            }
-            return;
-        }
-
-        // Escape: Focus active textarea
-        if (key === "escape") {
-            focusActiveTextarea();
-            return;
-        }
-    });
-}
-
-// ============================================================================
-// BOOTSTRAP
-// ============================================================================
-
-(async function bootstrap() {
-    // Set up state callbacks
     state.onButtonEnablementChange = updateButtonEnablement;
     state.onStatusChange = updateStatusIndicator;
     state.onLastSavedUpdate = updateLastSaved;
-    state.onFinishInitialization = finishInitialization;
+    state.onFinishInitialization = (shouldSkipSettingContent?: boolean) => {
+        void finishInitialization(shouldSkipSettingContent);
+    };
     state.onDecryptAndFinish = decryptContentAndFinishInitialization;
 
-    // Defer heavy initialization to next frame to improve FCP
-    requestAnimationFrame(async () => {
-        const path = window.location.pathname || "/";
-        const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-        const qp = getQueryParam("site");
-        const hasSiteId = (seg && seg !== "api") || qp;
+    await state.init();
+    initTabsLayout(() => state?.updateIsTextModified(true));
+    onWindowResize();
+    wireWorkspaceButtons();
+    wireWorkspaceEvents();
+    startHealthMonitoring();
 
-        if (!hasSiteId) return;
+    if (state.getIsNew() || !state.remote.eContent) {
+        await setContentOfTabs("", state);
+        await finishInitialization();
+        return;
+    }
 
-        await state.init();
-        initTabsLayout(() => state.updateIsTextModified(true));
-        onWindowResize();
-        wireEvents();
-        startHealthMonitoring();
+    setPasswordMode(true, { hide: true });
+    await initSite();
+}
 
-        if (state.getIsNew() || !state.remote.eContent) {
-            await setContentOfTabs("", state);
-            finishInitialization();
-        } else {
-            setPasswordMode(true, { hide: true });
-            initSite();
-        }
-    });
-})();
-
-// ============================================================================
-// THEME & COLOR PICKER INITIALIZATION (DOMContentLoaded)
-// ============================================================================
-
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     wireThemeToggle();
+    renderShortcutHelp();
+    handleGlobalErrors();
+    setupStatusTracking();
     initKeyboardShortcuts();
-
-    // Initialize new features
-    initGlobalSearch();
     initPasswordStrengthIndicators();
+    initGlobalSearch();
     initTabSwitcher();
+    initLanding();
+    setSiteLabel(SITE_ID);
 
-    // Initialize kinetic geometry animations
-    const path = window.location.pathname || "/";
-    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-    const qp = new URL(window.location.href).searchParams.get("site");
-    const isLanding = !((seg && seg !== "api") || qp);
-
-    initKineticBackground(isLanding);
-    initKineticButtons();
-    replaceLoaderWithKinetic();
-
-    // Add search button to menubar (before help button)
-    const helpButton = qs('#help-button');
-    if (helpButton && !qs('#search-button')) {
-        const searchButton = document.createElement('button');
-        searchButton.id = 'search-button';
-        searchButton.title = 'Global Search (Ctrl+Shift+F)';
-        searchButton.style.cssText = 'padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;';
-        searchButton.textContent = '🔍';
-        searchButton.addEventListener('click', openSearch);
-        helpButton.parentNode?.insertBefore(searchButton, helpButton);
-    }
-
-    // Global color picker functionality
-    const globalColorPicker = document.getElementById('tab-color-picker') as HTMLInputElement;
-    if (globalColorPicker) {
-        globalColorPicker.addEventListener('input', (e) => {
-            try {
-                const activeTab = document.querySelector('.tab-header.active') as HTMLElement;
-                if (activeTab) {
-                    const target = e.target as HTMLInputElement;
-                    const newColor = target.value;
-                    // Immediate visual feedback
-                    activeTab.style.backgroundColor = newColor;
-                }
-            } catch (error) {
-                console.error('Error updating tab color preview:', error);
-            }
-        });
-
-        globalColorPicker.addEventListener('change', (e) => {
-            try {
-                const activeTab = document.querySelector('.tab-header.active') as HTMLElement;
-                if (activeTab) {
-                    const target = e.target as HTMLInputElement;
-                    const newColor = target.value;
-                    // Validate color format
-                    if (!/^#[0-9A-F]{6}$/i.test(newColor)) {
-                        console.warn('Invalid color format:', newColor);
-                        return;
-                    }
-
-                    activeTab.dataset.tabColor = newColor;
-                    activeTab.style.backgroundColor = newColor;
-
-                    // Trigger state update
-                    state.updateIsTextModified(true);
-                }
-            } catch (error) {
-                console.error('Error updating tab color persistence:', error);
-            }
-        });
-    }
+    requestAnimationFrame(() => {
+        void bootstrapWorkspace();
+    });
 });

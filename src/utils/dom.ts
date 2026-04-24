@@ -60,7 +60,7 @@ export function on<K extends keyof HTMLElementEventMap>(
 export function showLoader(onFlag: boolean): void {
     const loader = qs<HTMLElement>("#loader");
     if (loader) {
-        loader.style.display = onFlag ? "flex" : "none";
+        loader.classList.toggle("hidden", !onFlag);
     }
 }
 
@@ -121,7 +121,7 @@ export function setPasswordMode(
  * @param sel - CSS selector
  */
 export const showHint = (sel: string): void => {
-    qs<HTMLElement>(sel)?.style.setProperty('display', 'block');
+    qs<HTMLElement>(sel)?.classList.remove("hidden");
 };
 
 /**
@@ -129,5 +129,5 @@ export const showHint = (sel: string): void => {
  * @param sel - CSS selector
  */
 export const hideHint = (sel: string): void => {
-    qs<HTMLElement>(sel)?.style.setProperty('display', 'none');
+    qs<HTMLElement>(sel)?.classList.add("hidden");
 };

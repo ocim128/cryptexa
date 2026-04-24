@@ -21,24 +21,21 @@ test.describe('Landing Page', () => {
         await expect(mainContent).toBeHidden();
     });
 
-    test('should display logo and branding', async ({ page }) => {
-        const logo = page.locator('.landing .logo');
-        await expect(logo).toBeVisible();
-
+    test('should display branding', async ({ page }) => {
         const title = page.locator('.landing h1');
-        await expect(title).toContainText('Cryptexa');
+        await expect(title).toContainText('Open a workspace');
     });
 
     test('should have site name input field', async ({ page }) => {
         const input = page.locator('#landing-site');
         await expect(input).toBeVisible();
-        await expect(input).toHaveAttribute('placeholder', 'definitely-not-my-diary');
+        await expect(input).toHaveAttribute('placeholder', 'work-notes');
     });
 
-    test('should have "Go" button', async ({ page }) => {
+    test('should have submit button', async ({ page }) => {
         const button = page.locator('#landing-open');
         await expect(button).toBeVisible();
-        await expect(button).toContainText('Go');
+        await expect(button).toContainText('Open Workspace');
     });
 
     test('should navigate to site when form is submitted', async ({ page }) => {
@@ -52,24 +49,19 @@ test.describe('Landing Page', () => {
         await expect(page).toHaveURL(/\/test-site-123/);
     });
 
-    test('should show alert for empty site name', async ({ page }) => {
-        // Set up dialog handler
-        page.on('dialog', async (dialog) => {
-            expect(dialog.message()).toContain('enter a site name');
-            await dialog.accept();
-        });
-
+    test('should keep the user on landing for empty site name', async ({ page }) => {
         const button = page.locator('#landing-open');
         await button.click();
 
         // URL should not change
         await expect(page).toHaveURL('/');
+        await expect(page.locator('.toast')).toContainText('Enter a workspace id.');
     });
 
     test('should display security information', async ({ page }) => {
-        const footerText = page.locator('.landing .footer-text');
-        await expect(footerText).toBeVisible();
-        await expect(footerText).toContainText('AES-256-GCM');
+        const landingMeta = page.locator('.landing-meta');
+        await expect(landingMeta).toBeVisible();
+        await expect(landingMeta).toContainText('AES-256-GCM');
     });
 });
 

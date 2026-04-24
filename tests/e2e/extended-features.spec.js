@@ -84,22 +84,24 @@ test.describe('Extended Tab Management', () => {
         await expect(firstTabContent).toHaveValue('Content in first tab');
     });
 
-    test('should support tab color customization', async ({ page }) => {
+    test('should keep utility actions visible in the toolbar', async ({ page }) => {
+        await expect(page.locator('#search-button')).toBeVisible();
+        await expect(page.locator('#button-export')).toBeVisible();
+        await expect(page.locator('#help-button')).toBeVisible();
+        await expect(page.locator('#tab-color-picker')).toBeVisible();
+        await expect(page.locator('#clear-tab-color')).toBeVisible();
+    });
+
+    test('should apply and clear a note mark color for the active tab', async ({ page }) => {
+        const activeHeader = page.locator('.tab-header.active');
         const colorPicker = page.locator('#tab-color-picker');
-        const activeTab = page.locator('.tab-header.active');
+        const clearButton = page.locator('#clear-tab-color');
 
-        // Check color picker exists
-        await expect(colorPicker).toBeVisible();
+        await colorPicker.fill('#22c55e');
+        await expect(activeHeader).toHaveAttribute('data-tab-color', '#22c55e');
 
-        // Change color (note: actual color input interaction varies by browser)
-        await colorPicker.evaluate((el) => {
-            /** @type {HTMLInputElement} */ (el).value = '#ff5500';
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-
-        // Tab should have the color stored
-        const tabColor = await activeTab.getAttribute('data-tab-color');
-        expect(tabColor).toBe('#ff5500');
+        await clearButton.click();
+        await expect(activeHeader).not.toHaveAttribute('data-tab-color', /.+/);
     });
 
     test('should update tab title based on content', async ({ page }) => {
@@ -193,7 +195,7 @@ test.describe('Editor Features', () => {
         const textarea = page.locator('.textarea-contents').first();
         const placeholder = await textarea.getAttribute('placeholder');
 
-        expect(placeholder).toBe('your text goes here...');
+        expect(placeholder).toBe('Write here...');
     });
 
     test('should focus textarea on Escape key', async ({ page }) => {
@@ -287,18 +289,9 @@ test.describe('Keyboard Shortcuts Help', () => {
     test('should show keyboard shortcuts on F1', async ({ page }) => {
         await page.keyboard.press('F1');
 
-        // Toast notification should appear with shortcuts info
-        await page.waitForTimeout(500);
-
-        // Check for notification content (implementation varies)
-        const toastContainer = page.locator('#toast-container, #outer-toast, .toast-container');
-        const toastVisible = await toastContainer.isVisible().catch(() => false);
-
-        // If toast container exists and is visible, check content
-        if (toastVisible) {
-            const toastContent = await toastContainer.textContent();
-            expect(toastContent).toContain('Ctrl');
-        }
+        const dialog = page.locator('#dialog-help');
+        await expect(dialog).toBeVisible({ timeout: 5000 });
+        await expect(dialog).toContainText('Keyboard shortcuts');
     });
 
     test('should have help button in menubar', async ({ page }) => {
@@ -310,14 +303,8 @@ test.describe('Keyboard Shortcuts Help', () => {
         const helpButton = page.locator('#help-button');
         await helpButton.click();
 
-        await page.waitForTimeout(500);
-
-        // Should show some notification
-        const hasNotification = await page.evaluate(() => {
-            const container = document.querySelector('#toast-container, #outer-toast');
-            return container && container.innerHTML.length > 0;
-        });
-
-        expect(hasNotification).toBeTruthy();
+        const dialog = page.locator('#dialog-help');
+        await expect(dialog).toBeVisible({ timeout: 5000 });
+        await expect(dialog).toContainText('Ctrl/Cmd + S');
     });
 });

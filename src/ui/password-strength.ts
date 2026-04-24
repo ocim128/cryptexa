@@ -198,7 +198,7 @@ export function updateStrengthIndicator(container: HTMLElement, strength: Passwo
     }
 
     if (feedback) {
-        feedback.textContent = strength.feedback.join(' • ');
+        feedback.textContent = strength.feedback.join(" | ");
     }
 }
 

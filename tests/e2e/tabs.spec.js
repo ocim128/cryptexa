@@ -20,7 +20,7 @@ test.describe('Tab Management', () => {
     test('should have add tab button', async ({ page }) => {
         const addButton = page.locator('#add_tab');
         await expect(addButton).toBeVisible();
-        await expect(addButton).toContainText('+');
+        await expect(addButton).toContainText('New Tab');
     });
 
     test('should add new tab when clicking add button', async ({ page }) => {
@@ -132,7 +132,7 @@ test.describe('Tab Content', () => {
 
     test('should show placeholder text', async ({ page }) => {
         const textarea = page.locator('.textarea-contents').first();
-        await expect(textarea).toHaveAttribute('placeholder', 'your text goes here...');
+        await expect(textarea).toHaveAttribute('placeholder', 'Write here...');
     });
 
     test('should have line gutter', async ({ page }) => {

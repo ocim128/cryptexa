@@ -51,10 +51,22 @@ export const openPasswordDialog = ({
     input.value = "";
 
     if (obscure) setPasswordMode(true, { hide: hideUI });
+    dlg.dataset.lockClose = "true";
     dlg.showModal();
     queueMicrotask(() => input.focus());
 
     const btnOk = dlg.querySelector<HTMLButtonElement>("button[value='ok']")!;
+    const handleLockedCancel = (event: Event): void => {
+        event.preventDefault();
+        input.focus();
+    };
+    const handleEnterKey = (event: KeyboardEvent): void => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (!btnOk.disabled) {
+            void handleOk(event);
+        }
+    };
 
     const handleOk = async (ev?: Event): Promise<void> => {
         ev?.preventDefault?.();
@@ -65,7 +77,7 @@ export const openPasswordDialog = ({
                 dlg.close("ok");
                 setPasswordMode(false);
             } else {
-                toast("Wrong password", "error");
+                toast("Incorrect password.", "error");
                 input.select();
                 input.focus();
                 return; // keep dialog open
@@ -76,10 +88,15 @@ export const openPasswordDialog = ({
     };
 
     btnOk.addEventListener("click", handleOk, { once: false });
+    input.addEventListener("keydown", handleEnterKey);
+    dlg.addEventListener("cancel", handleLockedCancel);
 
     const cleanup = (): void => {
         btnOk.removeEventListener("click", handleOk);
+        input.removeEventListener("keydown", handleEnterKey);
+        dlg.removeEventListener("cancel", handleLockedCancel);
         dlg.removeEventListener("close", cleanup);
+        delete dlg.dataset.lockClose;
     };
     dlg.addEventListener("close", cleanup);
 };
@@ -98,6 +115,13 @@ export const openDeletePasswordDialog = ({ onOk }: DeletePasswordDialogConfig): 
     queueMicrotask(() => input.focus());
 
     const btnOk = dlg.querySelector<HTMLButtonElement>("button[value='ok']")!;
+    const handleEnterKey = (event: KeyboardEvent): void => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (!btnOk.disabled) {
+            void handleOk(event);
+        }
+    };
 
     const handleOk = async (ev?: Event): Promise<void> => {
         ev?.preventDefault?.();
@@ -107,7 +131,7 @@ export const openDeletePasswordDialog = ({ onOk }: DeletePasswordDialogConfig): 
             if (success) {
                 dlg.close("ok");
             } else {
-                toast("Wrong password", "error");
+                toast("Incorrect password.", "error");
                 input.select();
                 input.focus();
                 return; // keep dialog open
@@ -118,9 +142,11 @@ export const openDeletePasswordDialog = ({ onOk }: DeletePasswordDialogConfig): 
     };
 
     btnOk.addEventListener("click", handleOk, { once: false });
+    input.addEventListener("keydown", handleEnterKey);
 
     const cleanup = (): void => {
         btnOk.removeEventListener("click", handleOk);
+        input.removeEventListener("keydown", handleEnterKey);
         dlg.removeEventListener("close", cleanup);
     };
     dlg.addEventListener("close", cleanup);
@@ -135,34 +161,49 @@ export const openNewPasswordDialog = ({ title, onSave }: NewPasswordDialogConfig
     const titleEl = qs<HTMLElement>("#dialog-new-password-title")!;
     const p1 = qs<HTMLInputElement>("#newpassword1")!;
     const p2 = qs<HTMLInputElement>("#newpassword2")!;
+    const btnOk = dlg.querySelector<HTMLButtonElement>("button[value='ok']")!;
 
     titleEl.textContent = title || "Create password";
     hideHint("#passwords-empty");
     hideHint("#passwords-dont-match");
     dlg.returnValue = "cancel";
+    p1.value = "";
+    p2.value = "";
     dlg.showModal();
-
-    setTimeout(() => {
-        p1.value = "";
-        p2.value = "";
-        p1.focus();
-    }, 0);
-
-    const handler = async (): Promise<void> => {
-        const ok = dlg.returnValue === "ok";
-        if (!ok) {
-            dlg.removeEventListener("close", handler);
-            return;
-        }
-        const proceed = await onSave(p1.value, p2.value);
-        if (proceed) {
-            dlg.removeEventListener("close", handler);
-        } else {
-            setTimeout(() => dlg.showModal(), 0);
+    queueMicrotask(() => p1.focus());
+    const handleEnterKey = (event: KeyboardEvent): void => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (!btnOk.disabled) {
+            void handleOk(event);
         }
     };
 
-    dlg.addEventListener("close", handler);
+    const handleOk = async (ev?: Event): Promise<void> => {
+        ev?.preventDefault?.();
+        btnOk.disabled = true;
+        try {
+            const proceed = await onSave(p1.value, p2.value);
+            if (proceed) {
+                dlg.close("ok");
+            }
+        } finally {
+            btnOk.disabled = false;
+        }
+    };
+
+    btnOk.addEventListener("click", handleOk, { once: false });
+    p1.addEventListener("keydown", handleEnterKey);
+    p2.addEventListener("keydown", handleEnterKey);
+
+    const cleanup = (): void => {
+        btnOk.removeEventListener("click", handleOk);
+        p1.removeEventListener("keydown", handleEnterKey);
+        p2.removeEventListener("keydown", handleEnterKey);
+        dlg.removeEventListener("close", cleanup);
+    };
+
+    dlg.addEventListener("close", cleanup);
 };
 
 /**

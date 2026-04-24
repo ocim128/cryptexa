@@ -252,7 +252,7 @@ export class ClientState {
                 };
 
                 if (data.status === "success") {
-                    toast("Saved!", "success", 1500);
+                    toast("Saved.", "success", 1500);
                     this.remote.isNew = false;
                     this.remote.eContent = eContentPayload;
                     this.remote.currentHashContent = data.currentHashContent || newHashContent;
@@ -265,26 +265,26 @@ export class ClientState {
                     if (this.onFinishInitialization) this.onFinishInitialization(true);
                 } else if (data.message) {
                     if (data.message.includes("modified in the meantime")) {
-                        toast("Failed! Content was modified by another session. Use Ctrl+R to reload and see changes, then try saving again.", "error", 5000);
+                        toast("Save failed. Another session updated this workspace. Reload and try again.", "error", 5000);
                     } else {
-                        toast("Failed! " + data.message, "error", 2500);
+                        toast(`Save failed. ${data.message}`, "error", 2500);
                     }
                     _focusActiveTextarea();
                 } else {
-                    toast("Save failed!", "error", 2500);
+                    toast("Save failed.", "error", 2500);
                     _focusActiveTextarea();
                 }
             } catch (error) {
                 console.error('Save operation failed:', error);
-                let errorMessage = "Save failed!";
+                let errorMessage = "Save failed.";
                 const err = error as Error;
 
                 if (err.name === 'AbortError') {
-                    errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
+                    errorMessage += " Request timed out.";
                 } else if (err.message.includes('HTTP')) {
-                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
+                    errorMessage += ` ${err.message}.`;
                 } else {
-                    errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
+                    errorMessage += " Connection issue.";
                 }
 
                 toast(errorMessage, "error", 2500);
@@ -336,7 +336,7 @@ export class ClientState {
 
                 const data = await res.json() as { status: string };
                 if (data.status === "success") {
-                    toast("Site was deleted!", "success", 2000);
+                    toast("Workspace deleted.", "success", 2000);
                     setTimeout(async () => {
                         this.password = "";
                         this.content = "";
@@ -346,19 +346,19 @@ export class ClientState {
                         if (this.onFinishInitialization) this.onFinishInitialization();
                     }, 2200);
                 } else {
-                    toast("Failed! Site was modified in the meantime. Reload first.", "error", 5000);
+                    toast("Delete failed. Reload first and try again.", "error", 5000);
                 }
             } catch (error) {
                 console.error('Delete operation failed:', error);
-                let errorMessage = "Deleting failed!";
+                let errorMessage = "Delete failed.";
                 const err = error as Error;
 
                 if (err.name === 'AbortError') {
-                    errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
+                    errorMessage += " Request timed out.";
                 } else if (err.message.includes('HTTP')) {
-                    errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
+                    errorMessage += ` ${err.message}.`;
                 } else {
-                    errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
+                    errorMessage += " Connection issue.";
                 }
 
                 toast(errorMessage, "error", 2500);
@@ -424,7 +424,7 @@ export class ClientState {
             showLoader(true);
             try {
                 await this.reloadFromServer();
-                toast("Reloaded!", "success", 500);
+                toast("Reloaded.", "success", 600);
                 this.isTextModified = false;
                 if (this.onStatusChange) this.onStatusChange("ready", "Ready");
 
@@ -457,7 +457,7 @@ export class ClientState {
                     if (this.onDecryptAndFinish) this.onDecryptAndFinish(true);
                 }
             } catch {
-                toast("Reloading failed! <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>", "error", 2500);
+                toast("Reload failed. Connection issue.", "error", 2500);
                 _focusActiveTextarea();
             } finally {
                 showLoader(false);

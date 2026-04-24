@@ -49,7 +49,7 @@
   function showLoader(onFlag) {
     const loader = qs("#loader");
     if (loader) {
-      loader.style.display = onFlag ? "flex" : "none";
+      loader.classList.toggle("hidden", !onFlag);
     }
   }
   function ensureObscureOverlay() {
@@ -89,52 +89,54 @@
     }
   }
   var showHint = (sel) => {
-    qs(sel)?.style.setProperty("display", "block");
+    qs(sel)?.classList.remove("hidden");
   };
   var hideHint = (sel) => {
-    qs(sel)?.style.setProperty("display", "none");
+    qs(sel)?.classList.add("hidden");
   };
 
   // src/ui/toast.ts
   var TOAST_ICONS = {
-    success: "\u2713",
-    error: "\u2715",
-    warning: "\u26A0",
-    info: "\u2139"
+    success: "OK",
+    error: "X",
+    warning: "!",
+    info: "i"
   };
   function toast(message, type = "info", duration = 4e3) {
     const container = document.getElementById("toast-container");
     if (!container) {
       const outer = qs("#outer-toast");
-      const el = qs("#toast");
-      if (outer && el) {
-        el.innerHTML = message;
-        outer.style.display = "block";
-        outer.style.opacity = "1";
-        setTimeout(() => outer.style.display = "none", duration);
+      const element = qs("#toast");
+      if (outer && element) {
+        element.textContent = message;
+        outer.classList.remove("hidden");
+        setTimeout(() => outer.classList.add("hidden"), duration);
       }
       return;
     }
     const toastEl = document.createElement("div");
     toastEl.className = `toast ${type}`;
-    const icon = TOAST_ICONS[type] || TOAST_ICONS.info;
-    toastEl.innerHTML = `<div class="toast-content"><span class="toast-icon">${icon}</span><span class="toast-message">${message}</span><button class="toast-close" onclick="this.parentElement.parentElement.remove()">&times;</button></div>`;
+    const content = document.createElement("div");
+    content.className = "toast-content";
+    const icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.textContent = TOAST_ICONS[type];
+    const text = document.createElement("span");
+    text.className = "toast-message";
+    text.textContent = message;
+    const closeButton = document.createElement("button");
+    closeButton.className = "toast-close";
+    closeButton.type = "button";
+    closeButton.setAttribute("aria-label", "Dismiss notification");
+    closeButton.textContent = String.fromCharCode(215);
+    content.append(icon, text, closeButton);
+    toastEl.appendChild(content);
+    closeButton?.addEventListener("click", () => toastEl.remove());
     container.appendChild(toastEl);
-    setTimeout(() => toastEl.parentElement && toastEl.remove(), duration);
-  }
-  function showNotification(message, type = "info", duration = 5e3) {
-    const notification = document.createElement("div");
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = message;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.classList.add("show"), 10);
     setTimeout(() => {
-      notification.classList.remove("show");
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.parentNode.removeChild(notification);
-        }
-      }, 300);
+      if (toastEl.parentElement) {
+        toastEl.remove();
+      }
     }, duration);
   }
 
@@ -149,9 +151,21 @@
     dlg.returnValue = "cancel";
     input.value = "";
     if (obscure) setPasswordMode(true, { hide: hideUI });
+    dlg.dataset.lockClose = "true";
     dlg.showModal();
     queueMicrotask(() => input.focus());
     const btnOk = dlg.querySelector("button[value='ok']");
+    const handleLockedCancel = (event) => {
+      event.preventDefault();
+      input.focus();
+    };
+    const handleEnterKey = (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!btnOk.disabled) {
+        void handleOk(event);
+      }
+    };
     const handleOk = async (ev) => {
       ev?.preventDefault?.();
       btnOk.disabled = true;
@@ -161,7 +175,7 @@
           dlg.close("ok");
           setPasswordMode(false);
         } else {
-          toast("Wrong password", "error");
+          toast("Incorrect password.", "error");
           input.select();
           input.focus();
           return;
@@ -171,9 +185,14 @@
       }
     };
     btnOk.addEventListener("click", handleOk, { once: false });
+    input.addEventListener("keydown", handleEnterKey);
+    dlg.addEventListener("cancel", handleLockedCancel);
     const cleanup = () => {
       btnOk.removeEventListener("click", handleOk);
+      input.removeEventListener("keydown", handleEnterKey);
+      dlg.removeEventListener("cancel", handleLockedCancel);
       dlg.removeEventListener("close", cleanup);
+      delete dlg.dataset.lockClose;
     };
     dlg.addEventListener("close", cleanup);
   };
@@ -185,6 +204,13 @@
     dlg.showModal();
     queueMicrotask(() => input.focus());
     const btnOk = dlg.querySelector("button[value='ok']");
+    const handleEnterKey = (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!btnOk.disabled) {
+        void handleOk(event);
+      }
+    };
     const handleOk = async (ev) => {
       ev?.preventDefault?.();
       btnOk.disabled = true;
@@ -193,7 +219,7 @@
         if (success) {
           dlg.close("ok");
         } else {
-          toast("Wrong password", "error");
+          toast("Incorrect password.", "error");
           input.select();
           input.focus();
           return;
@@ -203,8 +229,10 @@
       }
     };
     btnOk.addEventListener("click", handleOk, { once: false });
+    input.addEventListener("keydown", handleEnterKey);
     const cleanup = () => {
       btnOk.removeEventListener("click", handleOk);
+      input.removeEventListener("keydown", handleEnterKey);
       dlg.removeEventListener("close", cleanup);
     };
     dlg.addEventListener("close", cleanup);
@@ -214,30 +242,44 @@
     const titleEl = qs("#dialog-new-password-title");
     const p1 = qs("#newpassword1");
     const p2 = qs("#newpassword2");
+    const btnOk = dlg.querySelector("button[value='ok']");
     titleEl.textContent = title || "Create password";
     hideHint("#passwords-empty");
     hideHint("#passwords-dont-match");
     dlg.returnValue = "cancel";
+    p1.value = "";
+    p2.value = "";
     dlg.showModal();
-    setTimeout(() => {
-      p1.value = "";
-      p2.value = "";
-      p1.focus();
-    }, 0);
-    const handler = async () => {
-      const ok = dlg.returnValue === "ok";
-      if (!ok) {
-        dlg.removeEventListener("close", handler);
-        return;
-      }
-      const proceed = await onSave(p1.value, p2.value);
-      if (proceed) {
-        dlg.removeEventListener("close", handler);
-      } else {
-        setTimeout(() => dlg.showModal(), 0);
+    queueMicrotask(() => p1.focus());
+    const handleEnterKey = (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!btnOk.disabled) {
+        void handleOk(event);
       }
     };
-    dlg.addEventListener("close", handler);
+    const handleOk = async (ev) => {
+      ev?.preventDefault?.();
+      btnOk.disabled = true;
+      try {
+        const proceed = await onSave(p1.value, p2.value);
+        if (proceed) {
+          dlg.close("ok");
+        }
+      } finally {
+        btnOk.disabled = false;
+      }
+    };
+    btnOk.addEventListener("click", handleOk, { once: false });
+    p1.addEventListener("keydown", handleEnterKey);
+    p2.addEventListener("keydown", handleEnterKey);
+    const cleanup = () => {
+      btnOk.removeEventListener("click", handleOk);
+      p1.removeEventListener("keydown", handleEnterKey);
+      p2.removeEventListener("keydown", handleEnterKey);
+      dlg.removeEventListener("close", cleanup);
+    };
+    dlg.addEventListener("close", cleanup);
   };
   var openConfirmDialog = (selector, cb) => {
     const dlg = qs(selector);
@@ -271,11 +313,7 @@
   }
   function applyTheme(theme) {
     root.classList.remove("theme-dark", "theme-light");
-    if (theme === "light") {
-      root.classList.add("theme-light");
-    } else {
-      root.classList.add("theme-dark");
-    }
+    root.classList.add(theme === "light" ? "theme-light" : "theme-dark");
     updateToggle(theme);
   }
   function currentTheme() {
@@ -283,227 +321,42 @@
     if (stored === "dark" || stored === "light") return stored;
     if (root.classList.contains("theme-light")) return "light";
     if (root.classList.contains("theme-dark")) return "dark";
-    const system = getSystemPref();
-    return system === "light" ? "light" : "dark";
+    return getSystemPref();
   }
   function updateToggle(theme) {
-    const btn = document.getElementById("theme-toggle");
-    if (!btn) return;
-    const label = btn.querySelector(".label");
-    const icon = btn.querySelector(".icon");
+    const button = document.getElementById("theme-toggle");
+    if (!button) return;
+    const label = button.querySelector(".label");
     const isDark = theme === "dark";
-    btn.setAttribute("aria-pressed", String(isDark));
-    if (label) label.textContent = isDark ? "Dark" : "Light";
-    if (icon) icon.textContent = isDark ? "\u{1F319}" : "\u{1F506}";
+    button.setAttribute("aria-pressed", String(isDark));
+    button.setAttribute("aria-label", `Switch to ${isDark ? "light" : "dark"} theme`);
+    if (label) {
+      label.textContent = isDark ? "Dark" : "Light";
+    }
   }
   function initTheme() {
     const initial = getStored() || "light";
     applyTheme(initial);
   }
   function wireThemeToggle() {
-    const btn = document.getElementById("theme-toggle");
-    if (!btn) return;
-    btn.addEventListener("click", () => {
+    const button = document.getElementById("theme-toggle");
+    if (!button) return;
+    button.addEventListener("click", () => {
       const next = currentTheme() === "dark" ? "light" : "dark";
       applyTheme(next);
       store(next);
     });
-    if (window.matchMedia) {
-      const mq = window.matchMedia("(prefers-color-scheme: light)");
-      const handleChange = () => {
-        if (getStored()) return;
-        applyTheme(getSystemPref());
-      };
-      if (mq.addEventListener) {
-        mq.addEventListener("change", handleChange);
-      } else if ("addListener" in mq) {
-        mq.addListener(handleChange);
-      }
+    if (!window.matchMedia) return;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const handleChange = () => {
+      if (getStored()) return;
+      applyTheme(getSystemPref());
+    };
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+    } else if ("addListener" in mediaQuery) {
+      mediaQuery.addListener(handleChange);
     }
-  }
-
-  // src/ui/kinetic.js
-  var LissajousRenderer = class {
-    constructor(canvas) {
-      this.canvas = canvas;
-      this.ctx = canvas.getContext("2d");
-      this.particles = [];
-      this.time = 0;
-      this.animationId = null;
-      this.curves = [
-        { a: 3, b: 2, delta: Math.PI / 2, speed: 8e-3, size: 0.35 },
-        { a: 5, b: 4, delta: Math.PI / 4, speed: 6e-3, size: 0.25 },
-        { a: 3, b: 4, delta: Math.PI / 3, speed: 4e-3, size: 0.45 }
-      ];
-      this.resize();
-      window.addEventListener("resize", () => this.resize());
-    }
-    resize() {
-      this.canvas.width = window.innerWidth;
-      this.canvas.height = window.innerHeight;
-      this.centerX = this.canvas.width / 2;
-      this.centerY = this.canvas.height / 2;
-    }
-    // Calculate point on Lissajous curve
-    getPoint(curve, t) {
-      const amplitude = Math.min(this.centerX, this.centerY) * curve.size;
-      const x = amplitude * Math.sin(curve.a * t + curve.delta);
-      const y = amplitude * Math.sin(curve.b * t);
-      return { x: this.centerX + x, y: this.centerY + y };
-    }
-    draw() {
-      this.ctx.fillStyle = "rgba(15, 17, 21, 0.03)";
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      this.curves.forEach((curve, i) => {
-        const point = this.getPoint(curve, this.time * curve.speed);
-        const gradient = this.ctx.createRadialGradient(
-          point.x,
-          point.y,
-          0,
-          point.x,
-          point.y,
-          8
-        );
-        gradient.addColorStop(0, `rgba(122, 162, 255, ${0.4 - i * 0.1})`);
-        gradient.addColorStop(1, "transparent");
-        this.ctx.beginPath();
-        this.ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
-        this.ctx.fillStyle = gradient;
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
-        this.ctx.fillStyle = `rgba(122, 162, 255, ${0.6 - i * 0.15})`;
-        this.ctx.fill();
-      });
-      this.time += 1;
-    }
-    start() {
-      const animate = () => {
-        this.draw();
-        this.animationId = requestAnimationFrame(animate);
-      };
-      animate();
-    }
-    stop() {
-      if (this.animationId) {
-        cancelAnimationFrame(this.animationId);
-        this.animationId = null;
-      }
-    }
-  };
-  function createOrbitalSystem(container) {
-    const system = document.createElement("div");
-    system.className = "orbital-system";
-    for (let i = 1; i <= 4; i++) {
-      const ring = document.createElement("div");
-      ring.className = `orbital-ring orbital-ring--${i}`;
-      system.appendChild(ring);
-    }
-    const shapes = ["circle", "triangle", "square", "diamond"];
-    for (let i = 1; i <= 4; i++) {
-      const orbiter = document.createElement("div");
-      orbiter.className = `orbiter orbiter--${i}`;
-      const shape = document.createElement("div");
-      shape.className = `orbiter__shape orbiter__shape--${shapes[i - 1]}`;
-      orbiter.appendChild(shape);
-      system.appendChild(orbiter);
-    }
-    container.appendChild(system);
-    return system;
-  }
-  function createBreathingGrid(container) {
-    const grid = document.createElement("div");
-    grid.className = "breathing-grid";
-    for (let i = 1; i <= 3; i++) {
-      const layer = document.createElement("div");
-      layer.className = `breathing-grid__layer breathing-grid__layer--${i}`;
-      const hexagon = document.createElement("div");
-      hexagon.className = "breathing-grid__hexagon";
-      layer.appendChild(hexagon);
-      grid.appendChild(layer);
-    }
-    container.appendChild(grid);
-    return grid;
-  }
-  function createPendulumLoader(container, pendulumCount = 9) {
-    const loader = document.createElement("div");
-    loader.className = "pendulum-loader";
-    for (let i = 0; i < pendulumCount; i++) {
-      const pendulum = document.createElement("div");
-      pendulum.className = "pendulum";
-      loader.appendChild(pendulum);
-    }
-    container.appendChild(loader);
-    return loader;
-  }
-  function createFloatingParticles(container, count = 15) {
-    const particles = [];
-    for (let i = 0; i < count; i++) {
-      const particle = document.createElement("div");
-      particle.className = "particle";
-      particle.style.left = `${Math.random() * 100}%`;
-      particle.style.top = `${Math.random() * 100}%`;
-      particle.style.animationDelay = `${Math.random() * 20}s`;
-      particle.style.animationDuration = `${15 + Math.random() * 10}s`;
-      container.appendChild(particle);
-      particles.push(particle);
-    }
-    return particles;
-  }
-  function addKineticRipple(element) {
-    element.addEventListener("click", (e) => {
-      const rect = element.getBoundingClientRect();
-      const ripple = document.createElement("span");
-      ripple.className = "kinetic-ripple";
-      const size = Math.max(rect.width, rect.height);
-      ripple.style.width = ripple.style.height = `${size}px`;
-      ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
-      ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
-      element.style.position = "relative";
-      element.style.overflow = "hidden";
-      element.appendChild(ripple);
-      ripple.addEventListener("animationend", () => ripple.remove());
-    });
-  }
-  var lissajousRenderer = null;
-  function initKineticBackground(isLanding = false) {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return null;
-    }
-    let container = document.querySelector(".kinetic-bg");
-    if (!container) {
-      container = document.createElement("div");
-      container.className = "kinetic-bg";
-      if (isLanding) container.classList.add("kinetic-bg--landing");
-      document.body.insertBefore(container, document.body.firstChild);
-    }
-    container.innerHTML = "";
-    if (isLanding) {
-      createOrbitalSystem(container);
-      createBreathingGrid(container);
-      createFloatingParticles(container, 12);
-      const canvas = document.createElement("canvas");
-      canvas.className = "lissajous-canvas";
-      container.appendChild(canvas);
-      lissajousRenderer = new LissajousRenderer(canvas);
-      lissajousRenderer.start();
-    } else {
-      createFloatingParticles(container, 8);
-    }
-    return container;
-  }
-  function replaceLoaderWithKinetic() {
-    const loader = document.querySelector(".loader");
-    if (!loader) return;
-    const spinner = loader.querySelector(".spinner");
-    if (spinner) {
-      spinner.remove();
-      createPendulumLoader(loader);
-    }
-  }
-  function initKineticButtons() {
-    const buttons = document.querySelectorAll("#menubar-buttons button, .landing button");
-    buttons.forEach((btn) => addKineticRipple(btn));
   }
 
   // src/utils/crypto-helpers.ts
@@ -559,8 +412,68 @@
   var tabCounter = 1;
   var currentTabTitle = null;
   var currentTextarea = null;
+  var TAB_COLOR_METADATA_PREFIX = "__CRYPTEXA_COLOR__:";
+  var DEFAULT_TAB_MARK_COLOR = "#d15f38";
+  var MOBILE_METADATA_HINT = "Reload this website to hide mobile app metadata!";
   function getCurrentTabTitle() {
     return currentTabTitle;
+  }
+  function normalizeTabColor(color) {
+    if (!color) return null;
+    const normalized = color.trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(normalized)) return null;
+    return normalized === "#ffffff" ? null : normalized;
+  }
+  function hexToRgba(hex, alpha) {
+    const normalized = normalizeTabColor(hex);
+    if (!normalized) return `rgba(209, 95, 56, ${alpha})`;
+    const r = parseInt(normalized.slice(1, 3), 16);
+    const g = parseInt(normalized.slice(3, 5), 16);
+    const b = parseInt(normalized.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  function parseTabPayload(content) {
+    if (!content.startsWith(TAB_COLOR_METADATA_PREFIX)) {
+      return { color: null, content };
+    }
+    const lineEndIndex = content.indexOf("\n");
+    const colorLine = lineEndIndex === -1 ? content : content.substring(0, lineEndIndex);
+    const color = normalizeTabColor(colorLine.substring(TAB_COLOR_METADATA_PREFIX.length));
+    const cleanContent = lineEndIndex === -1 ? "" : content.substring(lineEndIndex + 1);
+    return {
+      color,
+      content: cleanContent
+    };
+  }
+  function applyTabColor(header, color) {
+    const normalizedColor = normalizeTabColor(color);
+    if (!normalizedColor) {
+      header.removeAttribute("data-tab-color");
+      header.classList.remove("has-mark");
+      header.style.removeProperty("--tab-mark");
+      header.style.removeProperty("--tab-mark-soft");
+      return;
+    }
+    header.dataset.tabColor = normalizedColor;
+    header.classList.add("has-mark");
+    header.style.setProperty("--tab-mark", normalizedColor);
+    header.style.setProperty("--tab-mark-soft", hexToRgba(normalizedColor, 0.14));
+  }
+  function syncTabColorControls() {
+    const activeHeader = qs(".tab-header.active");
+    const colorPicker = qs("#tab-color-picker");
+    const clearButton = qs("#clear-tab-color");
+    const markControl = qs(".tab-mark-control");
+    const activeColor = normalizeTabColor(activeHeader?.dataset.tabColor);
+    if (colorPicker) {
+      colorPicker.value = activeColor || DEFAULT_TAB_MARK_COLOR;
+    }
+    if (clearButton) {
+      clearButton.disabled = !activeColor;
+    }
+    if (markControl) {
+      markControl.classList.toggle("is-marked", Boolean(activeColor));
+    }
   }
   function updateGutterForTextarea(ta, gutter) {
     if (!ta || !gutter) return;
@@ -624,30 +537,26 @@
     const panels = qsa(".tab-panel");
     const id = headerLi.dataset.tabId;
     const panel = id ? qs(`#${id}`) : null;
-    requestAnimationFrame(() => {
-      headers.forEach((h) => h.classList.remove("active"));
-      panels.forEach((p) => p.classList.remove("active"));
-      headerLi.classList.add("active");
-      if (panel) panel.classList.add("active");
-      setTimeout(() => {
-        focusActiveTextarea();
-        const ta = panel?.querySelector("textarea.textarea-contents");
-        const gutter = panel?.querySelector(".line-gutter");
-        if (ta && gutter) {
-          const y = Math.round(ta.scrollTop || 0);
-          gutter.style.setProperty("--gutter-scroll-y", String(-y));
-          gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
-          gutter.style.removeProperty("top");
-          gutter.style.transform = "translateZ(0)";
-          const needsHeavyUpdate = ta.value && ta.value.length > 5e4;
-          if (needsHeavyUpdate) {
-            setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
-          } else {
-            updateGutterForTextarea(ta, gutter);
-          }
-        }
-      }, 0);
-    });
+    headers.forEach((h) => h.classList.remove("active"));
+    panels.forEach((p) => p.classList.remove("active"));
+    headerLi.classList.add("active");
+    if (panel) panel.classList.add("active");
+    syncTabColorControls();
+    focusActiveTextarea();
+    const ta = panel?.querySelector("textarea.textarea-contents");
+    const gutter = panel?.querySelector(".line-gutter");
+    if (!ta || !gutter) return;
+    const y = Math.round(ta.scrollTop || 0);
+    gutter.style.setProperty("--gutter-scroll-y", String(-y));
+    gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
+    gutter.style.removeProperty("top");
+    gutter.style.transform = "translateZ(0)";
+    const needsHeavyUpdate = ta.value.length > 5e4;
+    if (needsHeavyUpdate) {
+      setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
+      return;
+    }
+    updateGutterForTextarea(ta, gutter);
   }
   function getTitleFromContent(content) {
     let effectiveContent;
@@ -680,24 +589,13 @@
   function addTab(isExistingTab, contentIfAvailable = "", insertAfter = null, onModified = null) {
     const headersContainer = qs(".tab-headers-container");
     const id = `tab-${tabCounter++}`;
-    let actualContent = contentIfAvailable;
-    let tabColor = null;
-    if (contentIfAvailable && contentIfAvailable.startsWith("__CRYPTEXA_COLOR__:")) {
-      const colorEndIndex = contentIfAvailable.indexOf("\n");
-      if (colorEndIndex !== -1) {
-        const colorLine = contentIfAvailable.substring(0, colorEndIndex);
-        tabColor = colorLine.replace("__CRYPTEXA_COLOR__:", "").trim();
-        actualContent = contentIfAvailable.substring(colorEndIndex + 1);
-      }
-    }
+    const parsedPayload = parseTabPayload(contentIfAvailable);
+    const actualContent = parsedPayload.content;
     const li = document.createElement("li");
     li.className = "tab-header";
     li.dataset.tabId = id;
     li.draggable = true;
-    if (tabColor) {
-      li.dataset.tabColor = tabColor;
-      li.style.backgroundColor = tabColor;
-    }
+    applyTabColor(li, parsedPayload.color);
     const a = document.createElement("a");
     a.href = `#${id}`;
     a.className = "tab-title";
@@ -705,7 +603,7 @@
     const span = document.createElement("span");
     span.className = "close";
     span.title = "Remove Tab";
-    span.textContent = "\xD7";
+    span.textContent = String.fromCharCode(215);
     li.appendChild(a);
     li.appendChild(span);
     if (insertAfter && insertAfter.nextSibling) {
@@ -719,7 +617,7 @@
     panel.innerHTML = `
     <div class="editor-wrap">
       <div class="line-gutter" aria-hidden="true"></div>
-      <textarea rows="1" cols="1" class="textarea-contents" placeholder="your text goes here..."></textarea>
+      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."></textarea>
     </div>`;
     qs("#tabs").appendChild(panel);
     const ta = panel.querySelector("textarea.textarea-contents");
@@ -778,8 +676,11 @@
     const headers = qsa(".tab-header");
     headers.forEach((h) => {
       const closer = h.querySelector(".close");
-      if (closer) closer.style.display = headers.length > 1 ? "" : "none";
+      if (!closer) return;
+      const shouldShow = headers.length > 1 && !h.classList.contains("pinned");
+      closer.style.display = shouldShow ? "" : "none";
     });
+    syncTabColorControls();
     focusActiveTextarea();
   }
   function getDragAfterElement(container, x) {
@@ -789,9 +690,8 @@
       const offset = x - box.left - box.width / 2;
       if (offset < 0 && offset > closest.offset) {
         return { offset, element: child };
-      } else {
-        return closest;
       }
+      return closest;
     }, { offset: Number.NEGATIVE_INFINITY }).element;
   }
   function initTabDragAndDrop(onModified = null) {
@@ -890,7 +790,6 @@
           if (onModified) onModified(true);
           refreshTabs();
         });
-        return;
       }
     });
     const addTabBtn = qs("#add_tab");
@@ -900,25 +799,32 @@
         addTab(false, "", activeTab, onModified);
       });
     }
+    const colorPicker = qs("#tab-color-picker");
+    if (colorPicker) {
+      on(colorPicker, "input", () => {
+        const activeTab = qs(".tab-header.active");
+        if (!activeTab) return;
+        applyTabColor(activeTab, colorPicker.value);
+        syncTabColorControls();
+        if (onModified) onModified(true);
+      });
+    }
+    const clearColorBtn = qs("#clear-tab-color");
+    if (clearColorBtn) {
+      on(clearColorBtn, "click", () => {
+        const activeTab = qs(".tab-header.active");
+        if (!activeTab) return;
+        applyTabColor(activeTab, null);
+        syncTabColorControls();
+        if (onModified) onModified(true);
+      });
+    }
     initTabDragAndDrop(onModified);
     refreshTabs();
     onWindowResize();
     window.addEventListener("resize", onWindowResize);
   }
   function onWindowResize() {
-    const menubar = qs("#menubar");
-    const outter = qs("#main-content-outter");
-    const headers = qs(".tab-headers");
-    if (!menubar || !outter || !headers) return;
-    const top = menubar.getBoundingClientRect().height;
-    outter.style.top = `${top}px`;
-    const h = window.innerHeight - top;
-    outter.style.height = `${h}px`;
-    const panels = qsa(".tab-panel");
-    const headerH = headers.getBoundingClientRect().height;
-    panels.forEach((p) => {
-      p.style.height = `${Math.max(0, h - headerH)}px`;
-    });
     qsa(".tab-panel").forEach((panel) => {
       const ta = panel.querySelector("textarea.textarea-contents");
       const gutter = panel.querySelector(".line-gutter");
@@ -939,7 +845,7 @@
     tabCounter = 0;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] ?? "";
-      if (part.startsWith("\u267B Reload this website to hide mobile app metadata! \u267B")) {
+      if (part.includes(MOBILE_METADATA_HINT)) {
         state2.setMobileAppMetadataTabContent(part);
       } else {
         addTab(true, part, null, () => state2.updateIsTextModified(true));
@@ -960,10 +866,10 @@
       if (!header) continue;
       const id = header.dataset.tabId;
       const ta = id ? qs(`#${id} textarea.textarea-contents`) : null;
-      const tabColor = header.dataset.tabColor;
+      const tabColor = normalizeTabColor(header.dataset.tabColor);
       if (i > 0) all += sep;
-      if (tabColor && tabColor !== "#ffffff") {
-        all += `__CRYPTEXA_COLOR__:${tabColor}
+      if (tabColor) {
+        all += `${TAB_COLOR_METADATA_PREFIX}${tabColor}
 `;
       }
       all += ta?.value || "";
@@ -985,21 +891,31 @@
   var searchDialog = null;
   var searchInput = null;
   var resultsContainer = null;
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function highlightMatch(result) {
+    const before = escapeHtml(result.lineContent.substring(0, result.matchStart));
+    const match = escapeHtml(result.lineContent.substring(result.matchStart, result.matchEnd));
+    const after = escapeHtml(result.lineContent.substring(result.matchEnd));
+    const maxLen = 64;
+    const head = before.length > maxLen / 2 ? `...${before.substring(before.length - maxLen / 2)}` : before;
+    const tail = after.length > maxLen / 2 ? `${after.substring(0, maxLen / 2)}...` : after;
+    return `${head}<mark>${match}</mark>${tail}`;
+  }
   function searchAllTabs(query) {
     if (!query || query.length < 2) return [];
-    const results = [];
-    const headers = qsa(".tab-header");
     const lowerQuery = query.toLowerCase();
-    for (const header of headers) {
+    const results = [];
+    for (const header of qsa(".tab-header")) {
       const tabId = header.dataset.tabId;
       if (!tabId) continue;
       const tabTitle = header.querySelector(".tab-title")?.textContent || "Untitled";
       const textarea = qs(`#${tabId} .textarea-contents`);
       if (!textarea) continue;
-      const content = textarea.value;
-      const lines = content.split("\n");
-      for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-        const line = lines[lineNum];
+      const lines = textarea.value.split("\n");
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
         if (!line) continue;
         const lowerLine = line.toLowerCase();
         let matchIndex = lowerLine.indexOf(lowerQuery);
@@ -1007,7 +923,7 @@
           results.push({
             tabId,
             tabTitle,
-            lineNumber: lineNum + 1,
+            lineNumber: lineIndex + 1,
             lineContent: line,
             matchStart: matchIndex,
             matchEnd: matchIndex + query.length
@@ -1018,121 +934,51 @@
     }
     return results;
   }
-  function highlightMatch(result) {
-    const before = escapeHtml(result.lineContent.substring(0, result.matchStart));
-    const match = escapeHtml(result.lineContent.substring(result.matchStart, result.matchEnd));
-    const after = escapeHtml(result.lineContent.substring(result.matchEnd));
-    const maxLen = 60;
-    let displayBefore = before;
-    let displayAfter = after;
-    if (before.length > maxLen / 2) {
-      displayBefore = "..." + before.substring(before.length - maxLen / 2);
-    }
-    if (after.length > maxLen / 2) {
-      displayAfter = after.substring(0, maxLen / 2) + "...";
-    }
-    return `${displayBefore}<mark>${match}</mark>${displayAfter}`;
-  }
-  function escapeHtml(text) {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
   function renderResults() {
     if (!resultsContainer) return;
     if (searchState.results.length === 0) {
       if (searchState.query.length >= 2) {
         resultsContainer.innerHTML = `
                 <div class="search-no-results">
-                    <span class="search-no-results-icon">\u{1F50D}</span>
-                    <span>No matches found for "<strong>${escapeHtml(searchState.query)}</strong>"</span>
+                    <span>No matches for "${escapeHtml(searchState.query)}".</span>
                 </div>
             `;
-      } else if (searchState.query.length > 0) {
-        resultsContainer.innerHTML = `
-                <div class="search-hint">Type at least 2 characters to search</div>
-            `;
-      } else {
-        resultsContainer.innerHTML = `
-                <div class="search-hint">Start typing to search across all tabs</div>
-            `;
+        return;
       }
+      if (searchState.query.length > 0) {
+        resultsContainer.innerHTML = `
+                <div class="search-hint">Type at least 2 characters to search.</div>
+            `;
+        return;
+      }
+      resultsContainer.innerHTML = `
+            <div class="search-hint">Search across all open tabs.</div>
+        `;
       return;
     }
-    const html = searchState.results.map((result, index) => `
-        <div class="search-result${index === searchState.selectedIndex ? " selected" : ""}" 
-             data-index="${index}"
-             data-tab-id="${result.tabId}"
-             data-line="${result.lineNumber}">
-            <div class="search-result-header">
-                <span class="search-result-tab">\u{1F4C4} ${escapeHtml(result.tabTitle)}</span>
-                <span class="search-result-line">Line ${result.lineNumber}</span>
-            </div>
-            <div class="search-result-content">${highlightMatch(result)}</div>
-        </div>
-    `).join("");
     resultsContainer.innerHTML = `
         <div class="search-results-header">
-            Found ${searchState.results.length} match${searchState.results.length === 1 ? "" : "es"}
+            ${searchState.results.length} result${searchState.results.length === 1 ? "" : "s"}
         </div>
-        ${html}
+        ${searchState.results.map((result, index) => `
+            <div class="search-result${index === searchState.selectedIndex ? " selected" : ""}"
+                 data-index="${index}"
+                 data-tab-id="${result.tabId}"
+                 data-line="${result.lineNumber}">
+                <div class="search-result-header">
+                    <span class="search-result-tab">${escapeHtml(result.tabTitle)}</span>
+                    <span class="search-result-line">Line ${result.lineNumber}</span>
+                </div>
+                <div class="search-result-content">${highlightMatch(result)}</div>
+            </div>
+        `).join("")}
     `;
   }
-  function goToResult(result) {
-    const tabHeader = qs(`.tab-header[data-tab-id="${result.tabId}"]`);
-    if (tabHeader) {
-      activateTab(tabHeader);
-      setTimeout(() => {
-        const textarea = qs(`#${result.tabId} .textarea-contents`);
-        if (!textarea) return;
-        const lines = textarea.value.split("\n");
-        let charPosition = 0;
-        for (let i = 0; i < result.lineNumber - 1; i++) {
-          const lineLength = lines[i]?.length ?? 0;
-          charPosition += lineLength + 1;
-        }
-        charPosition += result.matchStart;
-        textarea.focus();
-        textarea.setSelectionRange(charPosition, charPosition + (result.matchEnd - result.matchStart));
-        const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 24;
-        const scrollTop = (result.lineNumber - 5) * lineHeight;
-        textarea.scrollTop = Math.max(0, scrollTop);
-      }, 100);
-    }
-    closeSearch();
-  }
-  function handleSearchKeydown(e) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (searchState.results.length > 0) {
-        searchState.selectedIndex = Math.min(
-          searchState.selectedIndex + 1,
-          searchState.results.length - 1
-        );
-        renderResults();
-        scrollSelectedIntoView();
-      }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (searchState.results.length > 0) {
-        searchState.selectedIndex = Math.max(searchState.selectedIndex - 1, 0);
-        renderResults();
-        scrollSelectedIntoView();
-      }
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const selectedResult = searchState.results[searchState.selectedIndex];
-      if (searchState.selectedIndex >= 0 && selectedResult) {
-        goToResult(selectedResult);
-      }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      closeSearch();
-    }
-  }
   function scrollSelectedIntoView() {
-    const selected = resultsContainer?.querySelector(".search-result.selected");
-    if (selected) {
-      selected.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
+    resultsContainer?.querySelector(".search-result.selected")?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth"
+    });
   }
   function handleSearchInput() {
     if (!searchInput) return;
@@ -1141,33 +987,81 @@
     searchState.selectedIndex = searchState.results.length > 0 ? 0 : -1;
     renderResults();
   }
-  function handleResultClick(e) {
-    const resultEl = e.target.closest(".search-result");
+  function goToResult(result) {
+    const tabHeader = qs(`.tab-header[data-tab-id="${result.tabId}"]`);
+    if (!tabHeader) {
+      closeSearch();
+      return;
+    }
+    activateTab(tabHeader);
+    setTimeout(() => {
+      const textarea = qs(`#${result.tabId} .textarea-contents`);
+      if (!textarea) return;
+      const lines = textarea.value.split("\n");
+      let charPosition = 0;
+      for (let i = 0; i < result.lineNumber - 1; i++) {
+        charPosition += (lines[i]?.length || 0) + 1;
+      }
+      charPosition += result.matchStart;
+      textarea.focus();
+      textarea.setSelectionRange(charPosition, charPosition + (result.matchEnd - result.matchStart));
+      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight, 10) || 24;
+      textarea.scrollTop = Math.max(0, (result.lineNumber - 5) * lineHeight);
+    }, 100);
+    closeSearch();
+  }
+  function handleSearchKeydown(event) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (searchState.results.length === 0) return;
+      searchState.selectedIndex = Math.min(searchState.selectedIndex + 1, searchState.results.length - 1);
+      renderResults();
+      scrollSelectedIntoView();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (searchState.results.length === 0) return;
+      searchState.selectedIndex = Math.max(searchState.selectedIndex - 1, 0);
+      renderResults();
+      scrollSelectedIntoView();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const selected = searchState.results[searchState.selectedIndex];
+      if (selected) {
+        goToResult(selected);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+    }
+  }
+  function handleResultClick(event) {
+    const resultEl = event.target.closest(".search-result");
     if (!resultEl) return;
-    const index = parseInt(resultEl.getAttribute("data-index") || "-1", 10);
+    const index = parseInt(resultEl.dataset.index || "-1", 10);
+    if (index < 0) return;
     const result = searchState.results[index];
-    if (index >= 0 && result) {
+    if (result) {
       goToResult(result);
     }
   }
   function openSearch() {
-    if (!searchDialog) {
-      initSearchDialog();
-    }
-    searchState = {
-      isOpen: true,
-      query: "",
-      results: [],
-      selectedIndex: -1
-    };
+    if (!searchDialog) initSearchDialog();
+    searchState.isOpen = true;
+    searchState.query = "";
+    searchState.results = [];
+    searchState.selectedIndex = -1;
     if (searchInput) {
       searchInput.value = "";
     }
     renderResults();
     searchDialog?.showModal();
-    setTimeout(() => {
-      searchInput?.focus();
-    }, 50);
+    setTimeout(() => searchInput?.focus(), 30);
   }
   function closeSearch() {
     searchState.isOpen = false;
@@ -1184,14 +1078,13 @@
     dialog.id = "search-dialog";
     dialog.className = "app-dialog search-dialog";
     dialog.innerHTML = `
-        <form method="dialog">
+        <form method="dialog" class="search-shell">
             <div class="search-header">
                 <div class="search-input-wrapper">
-                    <span class="search-icon">\u{1F50D}</span>
-                    <input type="text" 
-                           id="search-input" 
-                           class="search-input" 
-                           placeholder="Search across all tabs..."
+                    <input type="text"
+                           id="search-input"
+                           class="search-input"
+                           placeholder="Search open tabs"
                            autocomplete="off"
                            spellcheck="false" />
                     <kbd class="search-kbd">Esc</kbd>
@@ -1199,9 +1092,8 @@
             </div>
             <div id="search-results" class="search-results"></div>
             <div class="search-footer">
-                <span>\u2191\u2193 Navigate</span>
-                <span>\u21B5 Go to</span>
-                <span>Esc Close</span>
+                <span>Arrow keys navigate</span>
+                <span>Enter opens result</span>
             </div>
         </form>
     `;
@@ -1216,20 +1108,14 @@
     if (resultsContainer) {
       on(resultsContainer, "click", handleResultClick);
     }
-    on(dialog, "click", (e) => {
-      if (e.target === dialog) {
+    on(dialog, "click", (event) => {
+      if (event.target === dialog) {
         closeSearch();
       }
     });
   }
   function initGlobalSearch() {
     initSearchDialog();
-    on(document, "keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        openSearch();
-      }
-    });
   }
 
   // src/ui/password-strength.ts
@@ -1368,7 +1254,7 @@
       label.style.color = strength.color;
     }
     if (feedback) {
-      feedback.textContent = strength.feedback.join(" \u2022 ");
+      feedback.textContent = strength.feedback.join(" | ");
     }
   }
   function attachStrengthIndicator(inputSelector) {
@@ -1424,6 +1310,9 @@
   // src/ui/tab-switcher.ts
   var switcherDialog = null;
   var isInitialized = false;
+  function escapeHtml2(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
   function fuzzyMatch(query, text) {
     const queryLower = query.toLowerCase();
     const textLower = text.toLowerCase();
@@ -1433,91 +1322,67 @@
     let queryIndex = 0;
     let score = 0;
     let lastMatchIndex = -1;
-    for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
-      if (textLower[i] === queryLower[queryIndex]) {
-        if (lastMatchIndex === i - 1) {
-          score += 5;
-        } else {
-          score += 1;
-        }
-        lastMatchIndex = i;
-        queryIndex++;
-      }
+    for (let index = 0; index < textLower.length && queryIndex < queryLower.length; index++) {
+      if (textLower[index] !== queryLower[queryIndex]) continue;
+      score += lastMatchIndex === index - 1 ? 5 : 1;
+      lastMatchIndex = index;
+      queryIndex++;
     }
-    if (queryIndex !== queryLower.length) return -1;
-    return score;
+    return queryIndex === queryLower.length ? score : -1;
   }
   function highlightMatch2(query, text) {
     if (!query) return escapeHtml2(text);
     const queryLower = query.toLowerCase();
     const textLower = text.toLowerCase();
-    let result = "";
+    let output = "";
     let queryIndex = 0;
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i] || "";
-      const charLower = textLower[i] || "";
-      const queryChar = queryLower[queryIndex] || "";
-      if (queryIndex < queryLower.length && charLower === queryChar) {
-        result += `<mark>${escapeHtml2(char)}</mark>`;
+    for (let index = 0; index < text.length; index++) {
+      const character = text[index] || "";
+      const queryCharacter = queryLower[queryIndex] || "";
+      if (queryIndex < queryLower.length && textLower[index] === queryCharacter) {
+        output += `<mark>${escapeHtml2(character)}</mark>`;
         queryIndex++;
       } else {
-        result += escapeHtml2(char);
+        output += escapeHtml2(character);
       }
     }
-    return result;
-  }
-  function escapeHtml2(text) {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return output;
   }
   function getAllTabs() {
-    const headers = qsa(".tab-header");
-    const tabs = [];
-    headers.forEach((header, index) => {
+    return qsa(".tab-header").map((header, index) => {
       const id = header.dataset.tabId || "";
-      const titleEl = header.querySelector(".tab-title");
-      const title = titleEl?.textContent || "Empty Tab";
-      const isPinned = header.classList.contains("pinned");
-      const isModified = header.classList.contains("modified");
-      const panel = id ? qs(`#${id}`) : null;
-      const textarea = panel?.querySelector(".textarea-contents");
-      const content = textarea?.value?.substring(0, 200) || "";
-      tabs.push({
+      const title = header.querySelector(".tab-title")?.textContent || "Empty Tab";
+      const textarea = id ? qs(`#${id} .textarea-contents`) : null;
+      return {
         header,
         id,
         title,
-        content,
-        isPinned,
-        isModified,
+        content: textarea?.value?.substring(0, 200) || "",
+        isPinned: header.classList.contains("pinned"),
+        isModified: header.classList.contains("modified"),
         index
-      });
+      };
     });
-    return tabs;
   }
   function ensureSwitcherDialog() {
     if (switcherDialog) return switcherDialog;
     const dialog = document.createElement("dialog");
     dialog.id = "tab-switcher-dialog";
-    dialog.className = "tab-switcher-dialog";
+    dialog.className = "app-dialog tab-switcher-dialog";
     dialog.innerHTML = `
         <div class="tab-switcher-container">
             <div class="tab-switcher-header">
-                <input type="text" 
-                       id="tab-switcher-input" 
-                       class="tab-switcher-input" 
-                       placeholder="Search tabs... (\u2191\u2193 to navigate, Enter to select)"
+                <input type="text"
+                       id="tab-switcher-input"
+                       class="tab-switcher-input"
+                       placeholder="Find tab"
                        autocomplete="off" />
-                <kbd class="tab-switcher-hint">Esc to close</kbd>
+                <kbd class="tab-switcher-hint">Esc</kbd>
             </div>
-            <div class="tab-switcher-list" id="tab-switcher-list">
-                <!-- Tab items rendered here -->
-            </div>
+            <div class="tab-switcher-list" id="tab-switcher-list"></div>
             <div class="tab-switcher-footer">
                 <span class="tab-switcher-stat" id="tab-switcher-stat">0 tabs</span>
-                <div class="tab-switcher-shortcuts">
-                    <span><kbd>\u2191</kbd><kbd>\u2193</kbd> Navigate</span>
-                    <span><kbd>Enter</kbd> Select</span>
-                    <span><kbd>Ctrl+P</kbd> Pin/Unpin</span>
-                </div>
+                <span class="tab-switcher-keys">Arrow keys navigate, Enter opens.</span>
             </div>
         </div>
     `;
@@ -1525,74 +1390,65 @@
     switcherDialog = dialog;
     const input = dialog.querySelector("#tab-switcher-input");
     const list = dialog.querySelector("#tab-switcher-list");
-    input.addEventListener("input", () => {
+    input?.addEventListener("input", () => {
       renderTabList(input.value);
     });
-    input.addEventListener("keydown", (e) => {
-      const items = list.querySelectorAll(".tab-switcher-item");
-      const activeItem = list.querySelector(".tab-switcher-item.active");
+    input?.addEventListener("keydown", (event) => {
+      const items = list?.querySelectorAll(".tab-switcher-item") || [];
+      const activeItem = list?.querySelector(".tab-switcher-item.active") || null;
       const activeIndex = activeItem ? Array.from(items).indexOf(activeItem) : -1;
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          if (items.length > 0) {
-            const nextIndex = (activeIndex + 1) % items.length;
-            items.forEach((item, i) => item.classList.toggle("active", i === nextIndex));
-            items[nextIndex]?.scrollIntoView({ block: "nearest" });
-          }
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          if (items.length > 0) {
-            const prevIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
-            items.forEach((item, i) => item.classList.toggle("active", i === prevIndex));
-            items[prevIndex]?.scrollIntoView({ block: "nearest" });
-          }
-          break;
-        case "Enter":
-          e.preventDefault();
-          if (activeItem) {
-            const tabId = activeItem.dataset.tabId;
-            const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
-            if (header) {
-              activateTab(header);
-              closeSwitcher();
-            }
-          }
-          break;
-        case "Escape":
-          e.preventDefault();
-          closeSwitcher();
-          break;
-        case "p":
-        case "P":
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            if (activeItem) {
-              const tabId = activeItem.dataset.tabId;
-              const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
-              if (header) {
-                togglePinTab(header);
-                renderTabList(input.value);
-              }
-            }
-          }
-          break;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (items.length === 0) return;
+        const nextIndex = (activeIndex + 1) % items.length;
+        items.forEach((item, index) => item.classList.toggle("active", index === nextIndex));
+        items[nextIndex]?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (items.length === 0) return;
+        const previousIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+        items.forEach((item, index) => item.classList.toggle("active", index === previousIndex));
+        items[previousIndex]?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (!activeItem?.dataset.tabId) return;
+        const header = qs(`.tab-header[data-tab-id="${activeItem.dataset.tabId}"]`);
+        if (!header) return;
+        activateTab(header);
+        closeSwitcher();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSwitcher();
       }
     });
-    list.addEventListener("click", (e) => {
-      const item = e.target.closest(".tab-switcher-item");
-      if (item) {
-        const tabId = item.dataset.tabId;
-        const header = tabId ? qs(`.tab-header[data-tab-id="${tabId}"]`) : null;
-        if (header) {
-          activateTab(header);
-          closeSwitcher();
-        }
+    list?.addEventListener("click", (event) => {
+      const pinButton = event.target.closest(".tab-switcher-pin");
+      if (pinButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const tabId = pinButton.dataset.tabId;
+        if (!tabId) return;
+        const header2 = qs(`.tab-header[data-tab-id="${tabId}"]`);
+        if (!header2) return;
+        togglePinTab(header2);
+        renderTabList(input?.value || "");
+        return;
       }
+      const item = event.target.closest(".tab-switcher-item");
+      if (!item?.dataset.tabId) return;
+      const header = qs(`.tab-header[data-tab-id="${item.dataset.tabId}"]`);
+      if (!header) return;
+      activateTab(header);
+      closeSwitcher();
     });
-    dialog.addEventListener("click", (e) => {
-      if (e.target === dialog) {
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) {
         closeSwitcher();
       }
     });
@@ -1606,47 +1462,45 @@
     if (query.trim()) {
       tabs = tabs.map((tab) => ({
         ...tab,
-        score: Math.max(
-          fuzzyMatch(query, tab.title),
-          fuzzyMatch(query, tab.content) * 0.5
-          // Content matches worth less
-        )
+        score: Math.max(fuzzyMatch(query, tab.title), fuzzyMatch(query, tab.content) * 0.5)
       })).filter((tab) => tab.score > 0).sort((a, b) => b.score - a.score);
     }
     tabs.sort((a, b) => {
       if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       return a.index - b.index;
     });
-    list.innerHTML = tabs.map((tab, i) => `
-        <div class="tab-switcher-item ${i === 0 ? "active" : ""} ${tab.isPinned ? "pinned" : ""} ${tab.isModified ? "modified" : ""}" 
+    list.innerHTML = tabs.map((tab, index) => `
+        <div class="tab-switcher-item ${index === 0 ? "active" : ""} ${tab.isPinned ? "pinned" : ""}"
              data-tab-id="${tab.id}">
-            <div class="tab-switcher-item-icon">
-                ${tab.isPinned ? "\u{1F4CC}" : "\u{1F4C4}"}
-            </div>
-            <div class="tab-switcher-item-content">
+            <div class="tab-switcher-item-main">
                 <div class="tab-switcher-item-title">
                     ${highlightMatch2(query, tab.title)}
-                    ${tab.isModified ? '<span class="modified-dot">\u25CF</span>' : ""}
+                    ${tab.isModified ? '<span class="modified-dot" aria-label="Unsaved changes"></span>' : ""}
                 </div>
                 <div class="tab-switcher-item-preview">
-                    ${tab.content ? escapeHtml2(tab.content.substring(0, 80)) + (tab.content.length > 80 ? "..." : "") : "<em>Empty</em>"}
+                    ${tab.content ? escapeHtml2(tab.content.substring(0, 96)) + (tab.content.length > 96 ? "..." : "") : "Empty"}
                 </div>
             </div>
-            <div class="tab-switcher-item-index">#${tab.index + 1}</div>
+            <div class="tab-switcher-item-meta">
+                <span class="tab-switcher-item-index">#${tab.index + 1}</span>
+                <button type="button"
+                        class="tab-switcher-pin"
+                        data-tab-id="${tab.id}">
+                    ${tab.isPinned ? "Unpin" : "Pin"}
+                </button>
+            </div>
         </div>
     `).join("");
     if (stat) {
       const totalTabs = getAllTabs().length;
-      const pinnedCount = tabs.filter((t) => t.isPinned).length;
-      stat.textContent = `${tabs.length}/${totalTabs} tabs${pinnedCount ? ` \u2022 ${pinnedCount} pinned` : ""}`;
+      const pinnedCount = tabs.filter((tab) => tab.isPinned).length;
+      stat.textContent = `${tabs.length}/${totalTabs} tabs${pinnedCount ? `, ${pinnedCount} pinned` : ""}`;
     }
   }
   function openTabSwitcher() {
     const dialog = ensureSwitcherDialog();
     const input = dialog.querySelector("#tab-switcher-input");
-    if (input) {
-      input.value = "";
-    }
+    if (input) input.value = "";
     renderTabList();
     dialog.showModal();
     input?.focus();
@@ -1659,12 +1513,11 @@
     let pinIndicator = header.querySelector(".pin-indicator");
     if (header.classList.contains("pinned")) {
       if (!pinIndicator) {
-        const newIndicator = document.createElement("span");
-        newIndicator.className = "pin-indicator";
-        newIndicator.textContent = "\u{1F4CC}";
-        newIndicator.title = "Pinned - double-click to unpin";
-        header.insertBefore(newIndicator, header.firstChild);
-        pinIndicator = newIndicator;
+        pinIndicator = document.createElement("span");
+        pinIndicator.className = "pin-indicator";
+        pinIndicator.title = "Pinned";
+        pinIndicator.setAttribute("aria-hidden", "true");
+        header.insertBefore(pinIndicator, header.firstChild);
       }
       const container = qs(".tab-headers-container");
       const firstUnpinned = container?.querySelector(".tab-header:not(.pinned)");
@@ -1676,42 +1529,28 @@
     } else {
       pinIndicator?.remove();
     }
-    const closeBtn = header.querySelector(".close");
-    if (closeBtn) {
-      closeBtn.style.display = header.classList.contains("pinned") ? "none" : "";
+    const closeButton = header.querySelector(".close");
+    if (closeButton) {
+      closeButton.style.display = header.classList.contains("pinned") ? "none" : "";
     }
   }
   function setTabModified(header, modified) {
     header.classList.toggle("modified", modified);
   }
   function clearAllModified() {
-    qsa(".tab-header.modified").forEach((header) => {
-      header.classList.remove("modified");
-    });
+    qsa(".tab-header.modified").forEach((header) => header.classList.remove("modified"));
   }
   function initTabSwitcher() {
     if (isInitialized) return;
     isInitialized = true;
-    document.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "p" && !e.shiftKey && !e.altKey) {
-        const openDialogs = document.querySelectorAll("dialog[open]");
-        const firstDialog = openDialogs[0];
-        if (openDialogs.length === 0 || openDialogs.length === 1 && firstDialog?.id === "tab-switcher-dialog") {
-          e.preventDefault();
-          openTabSwitcher();
-        }
-      }
-    });
-    document.addEventListener("dblclick", (e) => {
-      const pinIndicator = e.target.closest(".pin-indicator");
-      if (pinIndicator) {
-        const header = pinIndicator.closest(".tab-header");
-        if (header) {
-          e.preventDefault();
-          e.stopPropagation();
-          togglePinTab(header);
-        }
-      }
+    document.addEventListener("dblclick", (event) => {
+      const pinIndicator = event.target.closest(".pin-indicator");
+      if (!pinIndicator) return;
+      const header = pinIndicator.closest(".tab-header");
+      if (!header) return;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePinTab(header);
     });
   }
 
@@ -1914,7 +1753,7 @@
           }
           const data = await res.json();
           if (data.status === "success") {
-            toast("Saved!", "success", 1500);
+            toast("Saved.", "success", 1500);
             this.remote.isNew = false;
             this.remote.eContent = eContentPayload;
             this.remote.currentHashContent = data.currentHashContent || newHashContent;
@@ -1927,25 +1766,25 @@
             if (this.onFinishInitialization) this.onFinishInitialization(true);
           } else if (data.message) {
             if (data.message.includes("modified in the meantime")) {
-              toast("Failed! Content was modified by another session. Use Ctrl+R to reload and see changes, then try saving again.", "error", 5e3);
+              toast("Save failed. Another session updated this workspace. Reload and try again.", "error", 5e3);
             } else {
-              toast("Failed! " + data.message, "error", 2500);
+              toast(`Save failed. ${data.message}`, "error", 2500);
             }
             _focusActiveTextarea();
           } else {
-            toast("Save failed!", "error", 2500);
+            toast("Save failed.", "error", 2500);
             _focusActiveTextarea();
           }
         } catch (error) {
           console.error("Save operation failed:", error);
-          let errorMessage = "Save failed!";
+          let errorMessage = "Save failed.";
           const err = error;
           if (err.name === "AbortError") {
-            errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
+            errorMessage += " Request timed out.";
           } else if (err.message.includes("HTTP")) {
-            errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
+            errorMessage += ` ${err.message}.`;
           } else {
-            errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
+            errorMessage += " Connection issue.";
           }
           toast(errorMessage, "error", 2500);
           _focusActiveTextarea();
@@ -1992,7 +1831,7 @@
           }
           const data = await res.json();
           if (data.status === "success") {
-            toast("Site was deleted!", "success", 2e3);
+            toast("Workspace deleted.", "success", 2e3);
             setTimeout(async () => {
               this.password = "";
               this.content = "";
@@ -2002,18 +1841,18 @@
               if (this.onFinishInitialization) this.onFinishInitialization();
             }, 2200);
           } else {
-            toast("Failed! Site was modified in the meantime. Reload first.", "error", 5e3);
+            toast("Delete failed. Reload first and try again.", "error", 5e3);
           }
         } catch (error) {
           console.error("Delete operation failed:", error);
-          let errorMessage = "Deleting failed!";
+          let errorMessage = "Delete failed.";
           const err = error;
           if (err.name === "AbortError") {
-            errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(request timeout)</span>";
+            errorMessage += " Request timed out.";
           } else if (err.message.includes("HTTP")) {
-            errorMessage += ` <br/> <span style='font-size: 0.9em; font-weight: normal'>(${err.message})</span>`;
+            errorMessage += ` ${err.message}.`;
           } else {
-            errorMessage += " <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>";
+            errorMessage += " Connection issue.";
           }
           toast(errorMessage, "error", 2500);
           _focusActiveTextarea();
@@ -2062,7 +1901,7 @@
         showLoader(true);
         try {
           await this.reloadFromServer();
-          toast("Reloaded!", "success", 500);
+          toast("Reloaded.", "success", 600);
           this.isTextModified = false;
           if (this.onStatusChange) this.onStatusChange("ready", "Ready");
           if (this.remote.isNew || !this.remote.eContent) {
@@ -2092,7 +1931,7 @@
             if (this.onDecryptAndFinish) this.onDecryptAndFinish(true);
           }
         } catch {
-          toast("Reloading failed! <br/> <span style='font-size: 0.9em; font-weight: normal'>(connection issue)</span>", "error", 2500);
+          toast("Reload failed. Connection issue.", "error", 2500);
           _focusActiveTextarea();
         } finally {
           showLoader(false);
@@ -2115,140 +1954,175 @@
     getContentFromTabs,
     setContentOfTabs
   });
+  var SHORTCUTS = [
+    { keys: "Ctrl/Cmd + S", description: "Save workspace" },
+    { keys: "Ctrl/Cmd + Shift + S", description: "Save with new password" },
+    { keys: "Ctrl/Cmd + R", description: "Reload encrypted content" },
+    { keys: "Ctrl/Cmd + Shift + F", description: "Open search" },
+    { keys: "Ctrl/Cmd + Shift + P", description: "Open tab switcher" },
+    { keys: "Ctrl/Cmd + Alt + T", description: "Create new tab" },
+    { keys: "Ctrl/Cmd + Tab", description: "Next tab" },
+    { keys: "Ctrl/Cmd + Shift + Tab", description: "Previous tab" },
+    { keys: "Ctrl/Cmd + 1-9", description: "Jump to tab by number" },
+    { keys: "Ctrl/Cmd + E", description: "Export encrypted backup" },
+    { keys: "Ctrl/Cmd + Shift + G", description: "Toggle theme" },
+    { keys: "F1", description: "Open shortcuts help" },
+    { keys: "Escape", description: "Close dialog or focus editor" }
+  ];
   function getQueryParam(name) {
     const url = new URL(window.location.href);
-    const v = url.searchParams.get(name);
-    return v && v.trim().length ? v.trim() : null;
+    const value = url.searchParams.get(name);
+    return value && value.trim().length ? value.trim() : null;
   }
   function getSiteFromURL() {
     const path = window.location.pathname || "/";
-    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-    if (seg && seg !== "api") return seg;
-    const qp = getQueryParam("site");
-    return qp || "local-notes";
+    const segment = path.replace(/^\/+|\/+$/g, "");
+    if (segment && segment !== "api") return segment;
+    return getQueryParam("site");
   }
   var SITE_ID = getSiteFromURL();
-  var URL_PASSWORD = function() {
+  var URL_PASSWORD = (() => {
     const named = getQueryParam("password");
     if (named) return named;
-    const qs2 = window.location.search || "";
-    if (qs2.startsWith("?") && qs2.length > 1 && !qs2.includes("=")) {
-      return decodeURIComponent(qs2.substring(1));
+    const query = window.location.search || "";
+    if (query.startsWith("?") && query.length > 1 && !query.includes("=")) {
+      return decodeURIComponent(query.substring(1));
     }
     return null;
-  }();
-  var state = new ClientState(SITE_ID, URL_PASSWORD);
-  window.state = state;
+  })();
+  var state = null;
   var ignoreInputEvent = true;
   var healthCheckInterval = null;
-  function initKeyboardShortcuts() {
-    document.addEventListener("keydown", (e) => {
-      const target = e.target;
-      if (target.tagName === "INPUT" && target.type !== "color") return;
-      const isCtrl = e.ctrlKey || e.metaKey;
-      const isShift = e.shiftKey;
-      const isAlt = e.altKey;
-      if (isCtrl && e.key === "s") {
-        e.preventDefault();
-        document.getElementById("button-save")?.click();
+  var landingInitialized = false;
+  var workspaceEventsWired = false;
+  function getState() {
+    if (!state) {
+      throw new Error("Workspace state is not initialized");
+    }
+    return state;
+  }
+  function setAppView(view) {
+    document.body.classList.toggle("view-landing", view === "landing");
+    document.body.classList.toggle("view-workspace", view === "workspace");
+  }
+  function renderShortcutHelp() {
+    const container = qs("#help-shortcuts");
+    if (!container) return;
+    container.innerHTML = SHORTCUTS.map((shortcut) => `
+        <div class="shortcut-item">
+            <span class="shortcut-keys">${shortcut.keys}</span>
+            <span class="shortcut-description">${shortcut.description}</span>
+        </div>
+    `).join("");
+  }
+  function openHelpDialog() {
+    renderShortcutHelp();
+    const dialog = qs("#dialog-help");
+    if (!dialog) return;
+    const blockingDialog = qsa("dialog[open]").find((openDialog) => openDialog !== dialog);
+    if (blockingDialog) return;
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  }
+  function closeTopmostDialog() {
+    const openDialogs = qsa("dialog[open]");
+    const dialog = openDialogs[openDialogs.length - 1];
+    if (!dialog) return false;
+    if (dialog.dataset.lockClose === "true") {
+      dialog.querySelector("input, button, textarea, [tabindex]:not([tabindex='-1'])")?.focus();
+      return true;
+    }
+    dialog.close();
+    return true;
+  }
+  function setSiteLabel(siteId) {
+    const siteContext = qs("#site-context");
+    const siteLabel = qs("#site-label");
+    if (!siteContext || !siteLabel) return;
+    if (!siteId) {
+      siteContext.classList.add("hidden");
+      siteLabel.textContent = "";
+      return;
+    }
+    siteLabel.textContent = siteId;
+    siteContext.classList.remove("hidden");
+  }
+  function navigateToWorkspace(siteId) {
+    const password = getQueryParam("password");
+    let destination = `${window.location.origin}/${encodeURIComponent(siteId)}`;
+    if (password) {
+      destination += `?password=${encodeURIComponent(password)}`;
+    }
+    window.location.href = destination;
+  }
+  function initLanding() {
+    if (landingInitialized) return;
+    landingInitialized = true;
+    const form = qs("#landing-form");
+    const input = qs("#landing-site");
+    if (!form || !input) return;
+    on(form, "submit", (event) => {
+      event.preventDefault();
+      const nextSite = (input.value || "").trim();
+      if (!nextSite) {
+        toast("Enter a workspace id.", "warning", 1800);
+        input.focus();
         return;
       }
-      if (isCtrl && isAlt && (e.key === "t" || e.key === "T")) {
-        e.preventDefault();
-        document.getElementById("add_tab")?.click();
-        return;
-      }
-      if (isCtrl && e.key === "r") {
-        e.preventDefault();
-        document.getElementById("button-reload")?.click();
-        return;
-      }
-      if (isCtrl && isShift && e.key === "P") {
-        e.preventDefault();
-        document.getElementById("button-savenew")?.click();
-        return;
-      }
-      if (isCtrl && isShift && (e.key === "g" || e.key === "G")) {
-        e.preventDefault();
-        document.getElementById("theme-toggle")?.click();
-        return;
-      }
-      if (isCtrl && e.key >= "1" && e.key <= "9") {
-        e.preventDefault();
-        const tabIndex = parseInt(e.key) - 1;
-        const tabs = document.querySelectorAll(".tab-header");
-        if (tabs[tabIndex]) {
-          tabs[tabIndex].querySelector(".tab-title")?.click();
-        }
-        return;
-      }
-      if (isCtrl && e.key === "Tab" && !isShift) {
-        e.preventDefault();
-        const tabs = document.querySelectorAll(".tab-header");
-        const activeIndex = Array.from(tabs).findIndex((tab) => tab.classList.contains("active"));
-        const nextIndex = (activeIndex + 1) % tabs.length;
-        tabs[nextIndex]?.querySelector(".tab-title")?.click();
-        return;
-      }
-      if (isCtrl && e.key === "Tab" && isShift) {
-        e.preventDefault();
-        const tabs = document.querySelectorAll(".tab-header");
-        const activeIndex = Array.from(tabs).findIndex((tab) => tab.classList.contains("active"));
-        const prevIndex = activeIndex === 0 ? tabs.length - 1 : activeIndex - 1;
-        tabs[prevIndex]?.querySelector(".tab-title")?.click();
-        return;
-      }
-      if (e.key === "F1") {
-        e.preventDefault();
-        showKeyboardShortcutsHelp();
-        return;
-      }
-      if (e.key === "Escape") {
-        const openDialog = document.querySelector("dialog[open]");
-        if (openDialog) {
-          openDialog.close();
-        } else {
-          focusActiveTextarea();
-        }
-        return;
-      }
+      navigateToWorkspace(nextSite);
     });
   }
-  function showKeyboardShortcutsHelp() {
-    const shortcuts = [
-      { keys: "Ctrl+S", desc: "Save notes" },
-      { keys: "Ctrl+Alt+T", desc: "New tab" },
-      { keys: "Ctrl+P", desc: "Quick tab switcher" },
-      { keys: "Ctrl+R", desc: "Reload from server" },
-      { keys: "Ctrl+Shift+F", desc: "Global search" },
-      { keys: "Ctrl+1-9", desc: "Switch to tab by number" },
-      { keys: "Ctrl+Tab", desc: "Next tab" },
-      { keys: "Ctrl+Shift+Tab", desc: "Previous tab" },
-      { keys: "Ctrl+Shift+P", desc: "Change password" },
-      { keys: "Ctrl+Shift+G", desc: "Toggle theme" },
-      { keys: "F1", desc: "Show this help" },
-      { keys: "Escape", desc: "Close dialogs or focus editor" }
-    ];
-    const helpText = shortcuts.map((s) => `<strong>${s.keys}</strong>: ${s.desc}`).join("<br>");
-    showNotification(`<div style="text-align: left; line-height: 1.6;"><strong>\u{1F680} Keyboard Shortcuts</strong><br><br>${helpText}</div>`, "info", 8e3);
+  function updateButtonEnablement(isTextModified, isSiteNew) {
+    const workspace = getState();
+    const saveButton = qs("#button-save");
+    const saveNewButton = qs("#button-savenew");
+    const reloadButton = qs("#button-reload");
+    const deleteButton = qs("#button-delete");
+    if (!saveButton || !saveNewButton || !reloadButton || !deleteButton) return;
+    saveButton.disabled = !isTextModified;
+    saveNewButton.disabled = Boolean(isSiteNew);
+    reloadButton.disabled = false;
+    deleteButton.disabled = Boolean(isSiteNew);
+    if (workspace.getInitialIsNew() === false && isTextModified) {
+      window.onbeforeunload = () => "Unsaved changes will be lost.";
+    } else {
+      window.onbeforeunload = null;
+    }
   }
-  window.addEventListener("error", (event) => {
-    console.error("Global error:", event.error);
-    showNotification("An unexpected error occurred. Please refresh the page.", "error");
-  });
-  window.addEventListener("unhandledrejection", (event) => {
-    console.error("Unhandled promise rejection:", event.reason);
-    showNotification("A network or processing error occurred. Please try again.", "error");
-    event.preventDefault();
-  });
-  if ("performance" in window) {
-    window.addEventListener("load", () => {
-      setTimeout(() => {
-        const perfData = performance.getEntriesByType("navigation")[0];
-        if (perfData) {
-          console.log("Page load time:", Math.round(perfData.loadEventEnd - perfData.fetchStart), "ms");
-        }
-      }, 0);
+  function updateStatusIndicator(status, text) {
+    const indicator = qs("#status-indicator");
+    const statusText = qs(".status-text");
+    if (!indicator || !statusText) return;
+    indicator.classList.remove("saving", "error", "modified");
+    if (status && status !== "ready") {
+      indicator.classList.add(status);
+    }
+    statusText.textContent = text || "Ready";
+  }
+  function updateLastSaved() {
+    const lastSaved = qs("#last-saved");
+    if (!lastSaved) return;
+    const now = /* @__PURE__ */ new Date();
+    lastSaved.textContent = `Saved ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    lastSaved.classList.remove("hidden");
+  }
+  function hideLastSaved() {
+    const lastSaved = qs("#last-saved");
+    lastSaved?.classList.add("hidden");
+  }
+  function setupStatusTracking() {
+    document.addEventListener("input", (event) => {
+      if (!(event.target instanceof HTMLTextAreaElement)) return;
+      if (!event.target.classList.contains("textarea-contents")) return;
+      updateStatusIndicator("modified", "Modified");
+      hideLastSaved();
+      const panel = event.target.closest(".tab-panel");
+      if (!panel) return;
+      const header = document.querySelector(`.tab-header[data-tab-id="${panel.id}"]`);
+      if (header) {
+        setTabModified(header, true);
+      }
     });
   }
   async function checkServerHealth() {
@@ -2260,151 +2134,43 @@
     }
   }
   function startHealthMonitoring() {
+    if (healthCheckInterval) return;
     healthCheckInterval = setInterval(async () => {
       const isHealthy = await checkServerHealth();
       if (!isHealthy) {
-        showNotification("Connection to server lost. Please check your internet connection.", "warning");
+        toast("Connection check failed.", "warning", 2400);
       }
     }, 5 * 60 * 1e3);
   }
   function stopHealthMonitoring() {
-    if (healthCheckInterval) {
-      clearInterval(healthCheckInterval);
-      healthCheckInterval = null;
-    }
+    if (!healthCheckInterval) return;
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
   }
-  window.stopHealthMonitoring = stopHealthMonitoring;
-  function updateButtonEnablement(isTextModified, isSiteNew) {
-    const bSave = qs("#button-save");
-    const bSaveNew = qs("#button-savenew");
-    const bReload = qs("#button-reload");
-    const bDelete = qs("#button-delete");
-    if (!bSave || !bSaveNew || !bReload || !bDelete) return;
-    bSave.disabled = !isTextModified;
-    if (state.getInitialIsNew() === false && isTextModified) {
-      window.onbeforeunload = () => "If you don't 'Save', you'll lose your changes.";
-    } else {
-      window.onbeforeunload = null;
-    }
-    bSaveNew.disabled = !!isSiteNew === true;
-    bReload.disabled = false;
-    bDelete.disabled = !!isSiteNew === true;
-  }
-  var updateStatusIndicator = (status, text) => {
-    const indicator = qs("#status-indicator");
-    const statusText = qs(".status-text");
-    if (!indicator || !statusText) return;
-    indicator.classList.remove("saving", "error", "modified");
-    if (status && status !== "ready") indicator.classList.add(status);
-    statusText.textContent = text || "Ready";
-  };
-  var updateLastSaved = () => {
-    const lastSavedElement = qs("#last-saved");
-    if (!lastSavedElement) return;
-    const now = /* @__PURE__ */ new Date();
-    const timeString = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    lastSavedElement.textContent = `Last saved: ${timeString}`;
-    lastSavedElement.style.display = "inline";
-  };
-  var hideLastSaved = () => {
-    const lastSavedElement = qs("#last-saved");
-    if (lastSavedElement) {
-      lastSavedElement.style.display = "none";
-    }
-  };
-  document.addEventListener("input", (e) => {
-    if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains("textarea-contents")) {
-      updateStatusIndicator("modified", "Modified");
-      hideLastSaved();
-      const panel = e.target.closest(".tab-panel");
-      if (panel) {
-        const tabId = panel.id;
-        const header = document.querySelector(`.tab-header[data-tab-id="${tabId}"]`);
-        if (header) {
-          setTabModified(header, true);
-        }
-      }
-    }
-  });
-  async function initSite() {
-    if (!state.getIsNew() && URL_PASSWORD) {
-      const ok = await state.setLoginPasswordAndContentIfCorrect(URL_PASSWORD);
-      if (ok) {
-        finishInitialization();
-        return;
-      }
-    }
-    if (state.getIsNew()) {
-      await setContentOfTabs("", state);
-      finishInitialization();
-    } else {
-      decryptContentAndFinishInitialization(false);
-    }
-  }
-  async function finishInitialization(shouldSkipSettingContent) {
-    state.setInitHashContent();
-    updateButtonEnablement(state.getIsTextModified(), state.getIsNew());
-    focusActiveTextarea();
-    ignoreInputEvent = true;
-    if (shouldSkipSettingContent !== true) {
-      setContentOfTabs(state.getContent(), state);
-    } else {
-      clearAllModified();
-    }
-    setTimeout(() => {
-      ignoreInputEvent = false;
-    }, 50);
-    try {
-      const panel = qs(".tab-panel.active");
-      const ta = panel && panel.querySelector("textarea.textarea-contents");
-      if (ta) {
-        const isHuge = ta.value && ta.value.length > 5e4;
-        if (panel) panel.dataset.huge = isHuge ? "1" : "";
-      }
-    } catch {
-    }
-  }
-  function decryptContentAndFinishInitialization(isOld) {
-    const openPrompt = () => {
-      openPasswordDialog({
-        obscure: true,
-        hideUI: true,
-        onOk: async (pass) => {
-          if (pass == null) {
-            focusActiveTextarea();
-            return false;
-          }
-          const ok = await state.setLoginPasswordAndContentIfCorrect(pass);
-          if (ok) {
-            finishInitialization();
-            return true;
-          }
-          return false;
-        }
-      });
-    };
-    if (isOld === true) {
-      state.setLoginPasswordAndContentIfCorrect(state.getPassword()).then((ok) => {
-        if (!ok) openPrompt();
-        else finishInitialization();
-      });
-    } else {
-      openPrompt();
-    }
+  function handleGlobalErrors() {
+    window.addEventListener("error", (event) => {
+      console.error("Global error:", event.error);
+      toast("Unexpected error. Refresh the page if the workspace becomes unstable.", "error", 3200);
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      console.error("Unhandled promise rejection:", event.reason);
+      toast("Request failed. Check the connection and try again.", "error", 3200);
+      event.preventDefault();
+    });
   }
   function exportEncryptedBackup(eContent) {
-    const title = `Cryptexa Encrypted Backup (${SITE_ID})`;
+    const siteId = SITE_ID || "workspace";
+    const title = `Cryptexa Encrypted Backup (${siteId})`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
 <body>
 <h3>${title}</h3>
-<p>Enter password to decrypt this backup locally (no network):</p>
+<p>Enter password to decrypt this backup locally. No network is required.</p>
 <input type="password" id="pw" placeholder="Password"/>
 <button id="dec">Decrypt</button>
 <pre id="out" style="white-space:pre-wrap;margin-top:12px;"></pre>
 <script>
 const textEncoder = new TextEncoder(); const textDecoder = new TextDecoder();
 function hexToBuf(hex){const len=hex.length/2;const out=new Uint8Array(len);for(let i=0;i<len;i++)out[i]=parseInt(hex.substr(i*2,2),16);return out.buffer;}
-function bufToHex(buf){const arr=new Uint8Array(buf);let s="";for(let i=0;i<arr.length;i++)s+=arr[i].toString(16).padStart(2,"0");return s;}
 async function pbkdf2KeyFromPassword(password, saltHex, iterations=150000){
   const salt=hexToBuf(saltHex);
   const baseKey=await crypto.subtle.importKey("raw", textEncoder.encode(password), {name:"PBKDF2"}, false, ["deriveKey"]);
@@ -2425,322 +2191,368 @@ document.getElementById("dec").onclick=async()=>{
     const plain=await aesGcmDecryptHex(ivHex,cipherHex,pw,saltHex);
     document.getElementById("out").textContent=plain;
   }catch(e){
-    document.getElementById("out").textContent="Decryption failed (wrong password?)";
+    document.getElementById("out").textContent="Decryption failed.";
   }
 };
 <${"/"}script>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cryptexa-backup-${SITE_ID}.html`;
-    document.body.appendChild(a);
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `cryptexa-backup-${siteId}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
     URL.revokeObjectURL(url);
-    a.remove();
+    anchor.remove();
   }
-  function wireEvents() {
-    let pendingRaf = 0;
-    document.addEventListener("input", (e) => {
-      if (!(e.target instanceof HTMLTextAreaElement)) return;
-      if (!e.target.classList.contains("textarea-contents")) return;
-      if (ignoreInputEvent) {
-        e.preventDefault();
+  function triggerExport() {
+    const workspace = getState();
+    const encrypted = workspace.remote.eContent;
+    if (!encrypted) {
+      toast("Nothing to export yet.", "warning", 1400);
+      return;
+    }
+    exportEncryptedBackup(encrypted);
+  }
+  function cycleTabs(direction) {
+    const headers = qsa(".tab-header");
+    if (headers.length === 0) return;
+    const activeIndex = headers.findIndex((tab) => tab.classList.contains("active"));
+    const nextIndex = activeIndex === -1 ? 0 : (activeIndex + direction + headers.length) % headers.length;
+    const target = headers[nextIndex];
+    if (target) activateTab(target);
+  }
+  function jumpToTabByNumber(index) {
+    const headers = qsa(".tab-header");
+    const target = headers[index];
+    if (target) activateTab(target);
+  }
+  function createNewTab() {
+    addTab(false, "", qs(".tab-header.active"), () => getState().updateIsTextModified(true));
+  }
+  function triggerSave(forceNewPassword) {
+    const workspace = getState();
+    if (!forceNewPassword && !workspace.getIsNew()) {
+      updateStatusIndicator("saving", "Saving");
+    }
+    void workspace.saveSite(forceNewPassword || workspace.getIsNew());
+  }
+  function isFormField(target) {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === "TEXTAREA") return false;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "OPTION") return true;
+    return target.isContentEditable;
+  }
+  function initKeyboardShortcuts() {
+    document.addEventListener("keydown", (event) => {
+      const key = event.key;
+      const keyLower = key.toLowerCase();
+      const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+      if (key === "F1") {
+        event.preventDefault();
+        openHelpDialog();
         return;
       }
+      if (key === "Escape") {
+        event.preventDefault();
+        if (!closeTopmostDialog()) {
+          focusActiveTextarea();
+        }
+        return;
+      }
+      if (!document.body.classList.contains("view-workspace") || !state) {
+        return;
+      }
+      const openDialogs = qsa("dialog[open]");
+      const formField = isFormField(event.target);
+      if (openDialogs.length > 0) {
+        return;
+      }
+      if (formField && !isCtrlOrCmd) {
+        return;
+      }
+      if (isCtrlOrCmd && event.shiftKey && keyLower === "s") {
+        event.preventDefault();
+        triggerSave(true);
+        return;
+      }
+      if (isCtrlOrCmd && keyLower === "s") {
+        event.preventDefault();
+        triggerSave(false);
+        return;
+      }
+      if (isCtrlOrCmd && keyLower === "r" && !event.shiftKey) {
+        event.preventDefault();
+        void getState().reloadSite();
+        return;
+      }
+      if (isCtrlOrCmd && event.shiftKey && keyLower === "f") {
+        event.preventDefault();
+        openSearch();
+        return;
+      }
+      if (isCtrlOrCmd && event.shiftKey && keyLower === "p") {
+        event.preventDefault();
+        openTabSwitcher();
+        return;
+      }
+      if (isCtrlOrCmd && event.altKey && keyLower === "t") {
+        event.preventDefault();
+        createNewTab();
+        return;
+      }
+      if (isCtrlOrCmd && keyLower === "e") {
+        event.preventDefault();
+        triggerExport();
+        return;
+      }
+      if (isCtrlOrCmd && event.shiftKey && keyLower === "g") {
+        event.preventDefault();
+        qs("#theme-toggle")?.click();
+        return;
+      }
+      if (isCtrlOrCmd && key >= "1" && key <= "9") {
+        event.preventDefault();
+        jumpToTabByNumber(parseInt(key, 10) - 1);
+        return;
+      }
+      if (isCtrlOrCmd && key === "Tab" && !event.shiftKey) {
+        event.preventDefault();
+        cycleTabs(1);
+        return;
+      }
+      if (isCtrlOrCmd && key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+        cycleTabs(-1);
+      }
+    });
+  }
+  function wireWorkspaceButtons() {
+    on(qs("#button-save"), "click", () => triggerSave(false));
+    on(qs("#button-savenew"), "click", () => triggerSave(true));
+    on(qs("#button-reload"), "click", () => {
+      void getState().reloadSite();
+    });
+    on(qs("#button-delete"), "click", () => {
+      void getState().deleteSite();
+    });
+    on(qs("#button-export"), "click", triggerExport);
+    on(qs("#search-button"), "click", openSearch);
+    on(qs("#help-button"), "click", openHelpDialog);
+  }
+  function wireWorkspaceEvents() {
+    if (workspaceEventsWired) return;
+    workspaceEventsWired = true;
+    let pendingRaf = 0;
+    document.addEventListener("input", (event) => {
+      if (!(event.target instanceof HTMLTextAreaElement)) return;
+      if (!event.target.classList.contains("textarea-contents")) return;
+      if (ignoreInputEvent || !state) return;
       state.updateIsTextModified(true);
-      const ta = e.target;
-      const currentTabTitle2 = getCurrentTabTitle();
+      const textarea = event.target;
+      const activeTabTitle = getCurrentTabTitle();
       if (pendingRaf) cancelAnimationFrame(pendingRaf);
       pendingRaf = requestAnimationFrame(() => {
         pendingRaf = 0;
         try {
-          const start = ta.selectionStart;
-          const isHuge = ta.value && ta.value.length > 5e4;
-          if (!isHuge && start <= 201 && currentTabTitle2) {
-            currentTabTitle2.textContent = getTitleFromContent(ta.value.substring(0, 200));
+          const start = textarea.selectionStart;
+          const isHuge = textarea.value.length > 5e4;
+          if (!isHuge && start <= 201 && activeTabTitle) {
+            activeTabTitle.textContent = getTitleFromContent(textarea.value.substring(0, 200));
           }
         } catch {
         }
-        const panel = ta.closest(".tab-panel");
-        const gutter = panel && panel.querySelector(".line-gutter");
-        const editorWrap = panel && panel.querySelector(".editor-wrap");
+        const panel = textarea.closest(".tab-panel");
+        const gutter = panel?.querySelector(".line-gutter") || null;
+        const editorWrap = panel?.querySelector(".editor-wrap") || null;
         if (gutter) {
-          const isHuge = ta.value && ta.value.length > 5e4;
+          const isHuge = textarea.value.length > 5e4;
           if (isHuge) {
-            const y = Math.round(ta.scrollTop || 0);
+            const y = Math.round(textarea.scrollTop || 0);
             gutter.style.setProperty("--gutter-scroll-y", String(-y));
             gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
             gutter.style.removeProperty("top");
             gutter.style.transform = "translateZ(0)";
             if (!gutter._lnDebounce) {
-              gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
+              gutter._lnDebounce = debounce(() => updateGutterForTextarea(textarea, gutter), 120);
             }
             gutter._lnDebounce();
           } else {
-            updateGutterForTextarea(ta, gutter);
+            updateGutterForTextarea(textarea, gutter);
           }
         }
         if (editorWrap) {
-          updateActiveLineHighlight(ta, editorWrap);
-          updateSelectedLinesHighlight(ta, editorWrap);
+          updateActiveLineHighlight(textarea, editorWrap);
+          updateSelectedLinesHighlight(textarea, editorWrap);
         }
       });
     });
     document.addEventListener("selectionchange", () => {
-      const ta = document.activeElement;
-      if (!(ta instanceof HTMLTextAreaElement)) return;
-      if (!ta.classList.contains("textarea-contents")) return;
-      const panel = ta.closest(".tab-panel");
-      const editorWrap = panel && panel.querySelector(".editor-wrap");
-      if (editorWrap) {
-        updateActiveLineHighlight(ta, editorWrap);
-        updateSelectedLinesHighlight(ta, editorWrap);
-      }
+      const textarea = document.activeElement;
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      if (!textarea.classList.contains("textarea-contents")) return;
+      const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+      if (!editorWrap) return;
+      updateActiveLineHighlight(textarea, editorWrap);
+      updateSelectedLinesHighlight(textarea, editorWrap);
     });
-    document.addEventListener("mouseup", (e) => {
-      if (!(e.target instanceof HTMLTextAreaElement)) return;
-      if (!e.target.classList.contains("textarea-contents")) return;
-      const ta = e.target;
-      const panel = ta.closest(".tab-panel");
-      const editorWrap = panel && panel.querySelector(".editor-wrap");
-      if (editorWrap) {
-        setTimeout(() => {
-          updateActiveLineHighlight(ta, editorWrap);
-          updateSelectedLinesHighlight(ta, editorWrap);
-        }, 0);
-      }
-    });
-    document.addEventListener("paste", (e) => {
-      if (!(e.target instanceof HTMLTextAreaElement)) return;
-      if (!e.target.classList.contains("textarea-contents")) return;
-      const currentTabTitle2 = getCurrentTabTitle();
+    document.addEventListener("mouseup", (event) => {
+      if (!(event.target instanceof HTMLTextAreaElement)) return;
+      if (!event.target.classList.contains("textarea-contents")) return;
+      const textarea = event.target;
+      const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+      if (!editorWrap) return;
       setTimeout(() => {
-        const ta = e.target;
-        const isHuge = ta.value && ta.value.length > 5e4;
-        if (!isHuge && currentTabTitle2) {
-          currentTabTitle2.textContent = getTitleFromContent();
+        updateActiveLineHighlight(textarea, editorWrap);
+        updateSelectedLinesHighlight(textarea, editorWrap);
+      }, 0);
+    });
+    document.addEventListener("paste", (event) => {
+      if (!(event.target instanceof HTMLTextAreaElement)) return;
+      if (!event.target.classList.contains("textarea-contents")) return;
+      const activeTabTitle = getCurrentTabTitle();
+      setTimeout(() => {
+        const textarea = event.target;
+        const isHuge = textarea.value.length > 5e4;
+        if (!isHuge && activeTabTitle) {
+          activeTabTitle.textContent = getTitleFromContent();
         }
-        const panel = ta.closest(".tab-panel");
-        const gutter = panel && panel.querySelector(".line-gutter");
-        if (gutter) {
-          if (isHuge) {
-            if (!gutter._lnDebounce) {
-              gutter._lnDebounce = debounce(() => updateGutterForTextarea(ta, gutter), 120);
-            }
-            gutter._lnDebounce();
-          } else {
-            updateGutterForTextarea(ta, gutter);
+        const gutter = textarea.closest(".tab-panel")?.querySelector(".line-gutter") || null;
+        if (!gutter) return;
+        if (isHuge) {
+          if (!gutter._lnDebounce) {
+            gutter._lnDebounce = debounce(() => updateGutterForTextarea(textarea, gutter), 120);
           }
+          gutter._lnDebounce();
+        } else {
+          updateGutterForTextarea(textarea, gutter);
         }
       }, 50);
     });
-    document.addEventListener("keydown", (e) => {
-      const ta = document.activeElement;
-      const isTextarea = ta && ta.classList && ta.classList.contains("textarea-contents");
-      const key = e.key || e.code;
-      if (isTextarea && key === "Tab" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-        e.preventDefault();
-        const start = ta.selectionStart;
-        const end = ta.selectionEnd;
-        const val = ta.value;
-        ta.value = val.substring(0, start) + "    " + val.substring(end);
-        ta.selectionStart = ta.selectionEnd = start + 4;
-        state.updateIsTextModified(true);
+    document.addEventListener("keydown", (event) => {
+      const textarea = document.activeElement;
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      if (!textarea.classList.contains("textarea-contents")) return;
+      if (event.key !== "Tab" || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+      event.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      textarea.value = value.substring(0, start) + "    " + value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + 4;
+      getState().updateIsTextModified(true);
+    });
+  }
+  async function initSite() {
+    const workspace = getState();
+    if (!workspace.getIsNew() && URL_PASSWORD) {
+      const success = await workspace.setLoginPasswordAndContentIfCorrect(URL_PASSWORD);
+      if (success) {
+        await finishInitialization();
         return;
       }
-    });
-    on(qs("#enterpassword"), "keypress", (e) => {
-      const event = e;
-      if (event.which === 13 || event.key === "Enter") {
-        event.preventDefault();
-        const decryptButton = qs("#dialog-password button[value='ok']");
-        if (decryptButton && !decryptButton.disabled) {
-          decryptButton.click();
+    }
+    if (workspace.getIsNew()) {
+      await setContentOfTabs("", workspace);
+      await finishInitialization();
+      return;
+    }
+    decryptContentAndFinishInitialization(false);
+  }
+  async function finishInitialization(shouldSkipSettingContent) {
+    const workspace = getState();
+    workspace.setInitHashContent();
+    updateButtonEnablement(workspace.getIsTextModified(), workspace.getIsNew());
+    updateStatusIndicator("ready", "Ready");
+    focusActiveTextarea();
+    ignoreInputEvent = true;
+    if (shouldSkipSettingContent !== true) {
+      await setContentOfTabs(workspace.getContent(), workspace);
+    } else {
+      clearAllModified();
+    }
+    setTimeout(() => {
+      ignoreInputEvent = false;
+    }, 50);
+  }
+  function decryptContentAndFinishInitialization(isOld) {
+    const workspace = getState();
+    const openPrompt = () => {
+      openPasswordDialog({
+        obscure: true,
+        hideUI: true,
+        onOk: async (password) => {
+          if (password == null) return false;
+          const success = await workspace.setLoginPasswordAndContentIfCorrect(password);
+          if (success) {
+            await finishInitialization();
+            return true;
+          }
+          return false;
         }
-      }
-    });
-    on(qs("#newpassword2"), "keypress", (e) => {
-      const event = e;
-      if (event.which === 13 || event.key === "Enter") {
-        const saveButton = qs("#dialog-new-password button[value='ok']");
-        if (saveButton) {
-          saveButton.click();
-        }
-        event.preventDefault();
-      }
-    });
-    on(qs("#button-save"), "click", () => state.saveSite(state.getIsNew()));
-    on(qs("#button-savenew"), "click", () => state.saveSite(true));
-    on(qs("#button-reload"), "click", () => state.reloadSite());
-    on(qs("#button-delete"), "click", () => {
-      openConfirmDialog("#dialog-confirm-delete-site", async (ok) => {
-        if (ok) state.deleteSite();
-        else focusActiveTextarea();
       });
-    });
-    on(qs("#help-button"), "click", () => {
-      showKeyboardShortcutsHelp();
-    });
-    setupKeyboardShortcuts();
-    if (!qs("#button-export")) {
-      const backupBtn = document.createElement("button");
-      backupBtn.id = "button-export";
-      backupBtn.textContent = "Export Encrypted Backup";
-      backupBtn.title = "Download encrypted backup (before decrypt)";
-      backupBtn.className = "";
-      qs("#menubar-buttons")?.appendChild(backupBtn);
-      on(backupBtn, "click", () => {
-        const eContent = state.remote.eContent;
-        if (!eContent) {
-          toast("Nothing to export yet", "warning", 1200);
+    };
+    if (isOld) {
+      void workspace.setLoginPasswordAndContentIfCorrect(workspace.getPassword()).then(async (success) => {
+        if (!success) {
+          openPrompt();
           return;
         }
-        exportEncryptedBackup(eContent);
+        await finishInitialization();
       });
+      return;
     }
+    openPrompt();
   }
-  function setupKeyboardShortcuts() {
-    document.addEventListener("keydown", (e) => {
-      const target = e.target;
-      if (target.tagName === "INPUT" && target.type !== "textarea") return;
-      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (isCtrlOrCmd && key === "r" && !e.shiftKey) {
-        e.preventDefault();
-        if (!qs("#button-reload").disabled) {
-          state.reloadSite();
-        }
-        return;
-      }
-      if (isCtrlOrCmd && key === "t" && !e.altKey) {
-        e.preventDefault();
-        addTab(false, "", null, () => state.updateIsTextModified(true));
-        return;
-      }
-      if (isCtrlOrCmd && key === "w") {
-        const headers = qsa(".tab-header");
-        if (headers.length > 1) {
-          e.preventDefault();
-          const activeHeader = qs(".tab-header.active");
-          if (activeHeader) {
-            const closeBtn = activeHeader.querySelector(".close");
-            if (closeBtn) closeBtn.click();
-          }
-        }
-        return;
-      }
-      if (isCtrlOrCmd && e.shiftKey && key === "s") {
-        e.preventDefault();
-        if (!qs("#button-savenew").disabled) {
-          state.saveSite(true);
-        }
-        return;
-      }
-      if (isCtrlOrCmd && key === "e") {
-        e.preventDefault();
-        qs("#button-export")?.click();
-        return;
-      }
-      if (isCtrlOrCmd && key >= "1" && key <= "9") {
-        e.preventDefault();
-        const tabIndex = parseInt(key) - 1;
-        const headers = qsa(".tab-header");
-        if (headers[tabIndex]) {
-          activateTab(headers[tabIndex]);
-        }
-        return;
-      }
-      if (key === "escape") {
-        focusActiveTextarea();
-        return;
-      }
-    });
-  }
-  (async function bootstrap() {
+  async function bootstrapWorkspace() {
+    if (!SITE_ID) {
+      setAppView("landing");
+      setSiteLabel(null);
+      initLanding();
+      return;
+    }
+    setAppView("workspace");
+    setSiteLabel(SITE_ID);
+    state = new ClientState(SITE_ID, URL_PASSWORD);
+    window.state = state;
     state.onButtonEnablementChange = updateButtonEnablement;
     state.onStatusChange = updateStatusIndicator;
     state.onLastSavedUpdate = updateLastSaved;
-    state.onFinishInitialization = finishInitialization;
+    state.onFinishInitialization = (shouldSkipSettingContent) => {
+      void finishInitialization(shouldSkipSettingContent);
+    };
     state.onDecryptAndFinish = decryptContentAndFinishInitialization;
-    requestAnimationFrame(async () => {
-      const path = window.location.pathname || "/";
-      const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-      const qp = getQueryParam("site");
-      const hasSiteId = seg && seg !== "api" || qp;
-      if (!hasSiteId) return;
-      await state.init();
-      initTabsLayout(() => state.updateIsTextModified(true));
-      onWindowResize();
-      wireEvents();
-      startHealthMonitoring();
-      if (state.getIsNew() || !state.remote.eContent) {
-        await setContentOfTabs("", state);
-        finishInitialization();
-      } else {
-        setPasswordMode(true, { hide: true });
-        initSite();
-      }
-    });
-  })();
+    await state.init();
+    initTabsLayout(() => state?.updateIsTextModified(true));
+    onWindowResize();
+    wireWorkspaceButtons();
+    wireWorkspaceEvents();
+    startHealthMonitoring();
+    if (state.getIsNew() || !state.remote.eContent) {
+      await setContentOfTabs("", state);
+      await finishInitialization();
+      return;
+    }
+    setPasswordMode(true, { hide: true });
+    await initSite();
+  }
   document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     wireThemeToggle();
+    renderShortcutHelp();
+    handleGlobalErrors();
+    setupStatusTracking();
     initKeyboardShortcuts();
-    initGlobalSearch();
     initPasswordStrengthIndicators();
+    initGlobalSearch();
     initTabSwitcher();
-    const path = window.location.pathname || "/";
-    const seg = path.replace(new RegExp("^/+|/+$", "g"), "");
-    const qp = new URL(window.location.href).searchParams.get("site");
-    const isLanding = !(seg && seg !== "api" || qp);
-    initKineticBackground(isLanding);
-    initKineticButtons();
-    replaceLoaderWithKinetic();
-    const helpButton = qs("#help-button");
-    if (helpButton && !qs("#search-button")) {
-      const searchButton = document.createElement("button");
-      searchButton.id = "search-button";
-      searchButton.title = "Global Search (Ctrl+Shift+F)";
-      searchButton.style.cssText = "padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;";
-      searchButton.textContent = "\u{1F50D}";
-      searchButton.addEventListener("click", openSearch);
-      helpButton.parentNode?.insertBefore(searchButton, helpButton);
-    }
-    const globalColorPicker = document.getElementById("tab-color-picker");
-    if (globalColorPicker) {
-      globalColorPicker.addEventListener("input", (e) => {
-        try {
-          const activeTab = document.querySelector(".tab-header.active");
-          if (activeTab) {
-            const target = e.target;
-            const newColor = target.value;
-            activeTab.style.backgroundColor = newColor;
-          }
-        } catch (error) {
-          console.error("Error updating tab color preview:", error);
-        }
-      });
-      globalColorPicker.addEventListener("change", (e) => {
-        try {
-          const activeTab = document.querySelector(".tab-header.active");
-          if (activeTab) {
-            const target = e.target;
-            const newColor = target.value;
-            if (!/^#[0-9A-F]{6}$/i.test(newColor)) {
-              console.warn("Invalid color format:", newColor);
-              return;
-            }
-            activeTab.dataset.tabColor = newColor;
-            activeTab.style.backgroundColor = newColor;
-            state.updateIsTextModified(true);
-          }
-        } catch (error) {
-          console.error("Error updating tab color persistence:", error);
-        }
-      });
-    }
+    initLanding();
+    setSiteLabel(SITE_ID);
+    requestAnimationFrame(() => {
+      void bootstrapWorkspace();
+    });
   });
 })();
 //# sourceMappingURL=app.js.map

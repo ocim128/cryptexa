@@ -3,25 +3,17 @@
  * Provides theme toggling with persistence and accessibility
  */
 
-/** Theme preference type */
-export type ThemePreference = 'light' | 'dark';
+export type ThemePreference = "light" | "dark";
 
-const STORAGE_KEY = 'theme-preference';
+const STORAGE_KEY = "theme-preference";
 const root = document.documentElement;
 
-/**
- * Gets system color scheme preference
- * @returns System theme preference
- */
 export function getSystemPref(): ThemePreference {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
-        ? 'light' : 'dark';
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
 }
 
-/**
- * Gets stored theme preference from localStorage
- * @returns Stored theme or null
- */
 export function getStored(): string | null {
     try {
         return localStorage.getItem(STORAGE_KEY);
@@ -30,10 +22,6 @@ export function getStored(): string | null {
     }
 }
 
-/**
- * Stores theme preference to localStorage
- * @param theme - Theme to store
- */
 export function store(theme: ThemePreference): void {
     try {
         localStorage.setItem(STORAGE_KEY, theme);
@@ -42,83 +30,60 @@ export function store(theme: ThemePreference): void {
     }
 }
 
-/**
- * Applies theme to document and updates toggle button
- * @param theme - Theme to apply
- */
 export function applyTheme(theme: ThemePreference): void {
-    root.classList.remove('theme-dark', 'theme-light');
-    if (theme === 'light') {
-        root.classList.add('theme-light');
-    } else {
-        root.classList.add('theme-dark');
-    }
+    root.classList.remove("theme-dark", "theme-light");
+    root.classList.add(theme === "light" ? "theme-light" : "theme-dark");
     updateToggle(theme);
 }
 
-/**
- * Gets current active theme
- * @returns Current theme
- */
 export function currentTheme(): ThemePreference {
     const stored = getStored();
-    if (stored === 'dark' || stored === 'light') return stored;
-    if (root.classList.contains('theme-light')) return 'light';
-    if (root.classList.contains('theme-dark')) return 'dark';
-    const system = getSystemPref();
-    return system === 'light' ? 'light' : 'dark';
+    if (stored === "dark" || stored === "light") return stored;
+    if (root.classList.contains("theme-light")) return "light";
+    if (root.classList.contains("theme-dark")) return "dark";
+    return getSystemPref();
 }
 
-/**
- * Updates theme toggle button state
- * @param theme - Current theme
- */
 export function updateToggle(theme: ThemePreference): void {
-    const btn = document.getElementById('theme-toggle');
-    if (!btn) return;
+    const button = document.getElementById("theme-toggle");
+    if (!button) return;
 
-    const label = btn.querySelector('.label');
-    const icon = btn.querySelector('.icon');
-    const isDark = theme === 'dark';
+    const label = button.querySelector(".label");
+    const isDark = theme === "dark";
 
-    btn.setAttribute('aria-pressed', String(isDark));
-    if (label) label.textContent = isDark ? 'Dark' : 'Light';
-    if (icon) icon.textContent = isDark ? '🌙' : '🔆';
+    button.setAttribute("aria-pressed", String(isDark));
+    button.setAttribute("aria-label", `Switch to ${isDark ? "light" : "dark"} theme`);
+    if (label) {
+        label.textContent = isDark ? "Dark" : "Light";
+    }
 }
 
-/**
- * Initializes theme on page load
- */
 export function initTheme(): void {
-    const initial = (getStored() || 'light') as ThemePreference;
+    const initial = (getStored() || "light") as ThemePreference;
     applyTheme(initial);
 }
 
-/**
- * Wires up theme toggle button and system preference listener
- */
 export function wireThemeToggle(): void {
-    const btn = document.getElementById('theme-toggle');
-    if (!btn) return;
+    const button = document.getElementById("theme-toggle");
+    if (!button) return;
 
-    btn.addEventListener('click', () => {
-        const next: ThemePreference = currentTheme() === 'dark' ? 'light' : 'dark';
+    button.addEventListener("click", () => {
+        const next: ThemePreference = currentTheme() === "dark" ? "light" : "dark";
         applyTheme(next);
         store(next);
     });
 
-    if (window.matchMedia) {
-        const mq = window.matchMedia('(prefers-color-scheme: light)');
-        const handleChange = (): void => {
-            if (getStored()) return; // user preference wins
-            applyTheme(getSystemPref());
-        };
+    if (!window.matchMedia) return;
 
-        if (mq.addEventListener) {
-            mq.addEventListener('change', handleChange);
-        } else if ('addListener' in mq) {
-            // Legacy support
-            (mq as MediaQueryList).addListener(handleChange);
-        }
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const handleChange = (): void => {
+        if (getStored()) return;
+        applyTheme(getSystemPref());
+    };
+
+    if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener("change", handleChange);
+    } else if ("addListener" in mediaQuery) {
+        mediaQuery.addListener(handleChange);
     }
 }

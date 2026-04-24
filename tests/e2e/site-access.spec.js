@@ -52,9 +52,10 @@ test.describe('Site Access', () => {
 });
 
 test.describe('New Site Creation', () => {
-    const uniqueSite = `test-site-${Date.now()}`;
+    const getUniqueSite = () => `test-site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     test('should show password dialog for new site when saving', async ({ page }) => {
+        const uniqueSite = getUniqueSite();
         await page.goto(`/${uniqueSite}`);
 
         // Wait for page to load
@@ -74,6 +75,7 @@ test.describe('New Site Creation', () => {
     });
 
     test('should validate matching passwords', async ({ page }) => {
+        const uniqueSite = getUniqueSite();
         await page.goto(`/${uniqueSite}`);
         await page.waitForLoadState('networkidle');
 
@@ -101,6 +103,7 @@ test.describe('New Site Creation', () => {
     });
 
     test('should reject empty password', async ({ page }) => {
+        const uniqueSite = getUniqueSite();
         await page.goto(`/${uniqueSite}`);
         await page.waitForLoadState('networkidle');
 
@@ -142,5 +145,34 @@ test.describe('Password Dialogs', () => {
 
         // Dialog should close
         await expect(dialog).toBeHidden();
+    });
+
+    test('should keep delete password dialog open when Enter submits an invalid password', async ({ page }) => {
+        const uniqueSite = `delete-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await page.goto(`/${uniqueSite}`);
+        await page.waitForLoadState('networkidle');
+
+        await page.locator('.textarea-contents').first().fill('Content');
+        await page.locator('#button-save').click();
+
+        const createDialog = page.locator('#dialog-new-password');
+        await expect(createDialog).toBeVisible();
+        await page.locator('#newpassword1').fill('correct-password');
+        await page.locator('#newpassword2').fill('correct-password');
+        await createDialog.locator('button[value="ok"]').click();
+        await expect(createDialog).toBeHidden({ timeout: 10000 });
+
+        await page.locator('#button-delete').click();
+        const confirmDelete = page.locator('#dialog-confirm-delete-site');
+        await expect(confirmDelete).toBeVisible();
+        await confirmDelete.locator('button[value="ok"]').click();
+
+        const passwordDialog = page.locator('#dialog-delete-password');
+        await expect(passwordDialog).toBeVisible();
+        await page.locator('#deletepassword').fill('wrong-password');
+        await page.locator('#deletepassword').press('Enter');
+
+        await expect(passwordDialog).toBeVisible();
+        await expect(page.locator('.toast').last()).toContainText('Incorrect password.');
     });
 });

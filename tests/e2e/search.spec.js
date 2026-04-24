@@ -31,8 +31,6 @@ test.describe('Global Search', () => {
 
     test('should open search dialog with search button click', async ({ page }) => {
         const searchButton = page.locator('#search-button');
-
-        // Wait for the button to be added dynamically
         await expect(searchButton).toBeVisible({ timeout: 5000 });
         await searchButton.click();
 
@@ -53,7 +51,7 @@ test.describe('Global Search', () => {
         await page.keyboard.press('Control+Shift+f');
 
         const hint = page.locator('.search-hint');
-        await expect(hint).toContainText('Start typing to search');
+        await expect(hint).toContainText('Search across all open tabs.');
     });
 
     test('should show minimum characters hint for single character', async ({ page }) => {
@@ -63,7 +61,7 @@ test.describe('Global Search', () => {
         await searchInput.fill('a');
 
         const hint = page.locator('.search-hint');
-        await expect(hint).toContainText('at least 2 characters');
+        await expect(hint).toContainText('Type at least 2 characters to search.');
     });
 
     test('should find text in current tab', async ({ page }) => {
