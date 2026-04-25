@@ -99,6 +99,18 @@ let ignoreInputEvent = true;
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 let landingInitialized = false;
 let workspaceEventsWired = false;
+let highlightUpdateRaf = 0;
+
+function scheduleEditorHighlightUpdate(textarea: HTMLTextAreaElement): void {
+    if (highlightUpdateRaf) cancelAnimationFrame(highlightUpdateRaf);
+    highlightUpdateRaf = requestAnimationFrame(() => {
+        highlightUpdateRaf = 0;
+        const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+        if (!editorWrap) return;
+        updateActiveLineHighlight(textarea, editorWrap);
+        updateSelectedLinesHighlight(textarea, editorWrap);
+    });
+}
 
 function getState(): ClientState {
     if (!state) {
@@ -559,8 +571,7 @@ function wireWorkspaceEvents(): void {
             }
 
             if (editorWrap) {
-                updateActiveLineHighlight(textarea, editorWrap);
-                updateSelectedLinesHighlight(textarea, editorWrap);
+                scheduleEditorHighlightUpdate(textarea);
             }
         });
     });
@@ -570,10 +581,7 @@ function wireWorkspaceEvents(): void {
         if (!(textarea instanceof HTMLTextAreaElement)) return;
         if (!textarea.classList.contains("textarea-contents")) return;
 
-        const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
-        if (!editorWrap) return;
-        updateActiveLineHighlight(textarea, editorWrap);
-        updateSelectedLinesHighlight(textarea, editorWrap);
+        scheduleEditorHighlightUpdate(textarea);
     });
 
     document.addEventListener("mouseup", (event) => {
@@ -581,11 +589,8 @@ function wireWorkspaceEvents(): void {
         if (!event.target.classList.contains("textarea-contents")) return;
 
         const textarea = event.target;
-        const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
-        if (!editorWrap) return;
         setTimeout(() => {
-            updateActiveLineHighlight(textarea, editorWrap);
-            updateSelectedLinesHighlight(textarea, editorWrap);
+            scheduleEditorHighlightUpdate(textarea);
         }, 0);
     });
 
@@ -611,6 +616,7 @@ function wireWorkspaceEvents(): void {
             } else {
                 updateGutterForTextarea(textarea, gutter);
             }
+            scheduleEditorHighlightUpdate(textarea);
         }, 50);
     });
 

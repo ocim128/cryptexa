@@ -35,9 +35,23 @@ let tabCounter = 1;
 let currentTabTitle: Element | null = null;
 let currentTextarea: HTMLTextAreaElement | null = null;
 
+interface EditorMetricsCache {
+    value: string;
+    newlineCount: number;
+    lineStarts: number[];
+}
+
+interface EditorOverlayState {
+    activeLine: HTMLElement;
+    selectionBlock: HTMLElement;
+}
+
 const TAB_COLOR_METADATA_PREFIX = "__CRYPTEXA_COLOR__:";
 const DEFAULT_TAB_MARK_COLOR = "#d15f38";
 const MOBILE_METADATA_HINT = "Reload this website to hide mobile app metadata!";
+
+const editorMetricsCache = new WeakMap<HTMLTextAreaElement, EditorMetricsCache>();
+const editorOverlayCache = new WeakMap<Element, EditorOverlayState>();
 
 // ============================================================================
 // GETTERS
@@ -138,9 +152,7 @@ export function updateGutterForTextarea(
     gutter: HTMLElement | null
 ): void {
     if (!ta || !gutter) return;
-    const value = ta.value || "";
-    const base = value.split("\n").length;
-    const count = Math.max(1, base + (value.endsWith("\n") ? 1 : 0));
+    const count = Math.max(1, getEditorMetrics(ta).newlineCount + 1);
     let out = "1";
     for (let i = 2; i <= count; i++) out += "\n" + i;
     gutter.setAttribute("data-lines", out);
@@ -156,8 +168,84 @@ export function updateGutterForTextarea(
  */
 export function getLineNumberFromPosition(text: string, position: number): number {
     if (position < 0) return 1;
-    const textUpToPosition = text.substring(0, position);
-    return textUpToPosition.split('\n').length;
+    let line = 1;
+    const end = Math.min(position, text.length);
+    for (let i = 0; i < end; i++) {
+        if (text.charCodeAt(i) === 10) line++;
+    }
+    return line;
+}
+
+function getEditorMetrics(ta: HTMLTextAreaElement): EditorMetricsCache {
+    const value = ta.value || "";
+    const cached = editorMetricsCache.get(ta);
+    if (cached?.value === value) {
+        return cached;
+    }
+
+    const lineStarts = [0];
+    let newlineCount = 0;
+    for (let index = 0; index < value.length; index++) {
+        if (value.charCodeAt(index) === 10) {
+            newlineCount++;
+            lineStarts.push(index + 1);
+        }
+    }
+
+    const metrics = { value, newlineCount, lineStarts };
+    editorMetricsCache.set(ta, metrics);
+    return metrics;
+}
+
+function getLineNumberFromPositionInTextarea(ta: HTMLTextAreaElement, position: number): number {
+    if (position < 0) return 1;
+    const { lineStarts } = getEditorMetrics(ta);
+    let low = 0;
+    let high = lineStarts.length - 1;
+
+    while (low <= high) {
+        const mid = (low + high) >> 1;
+        if ((lineStarts[mid] ?? Number.MAX_SAFE_INTEGER) <= position) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    return high + 1;
+}
+
+function getSelectionLineRange(ta: HTMLTextAreaElement): { startLine: number; endLine: number } | null {
+    const selectionStart = ta.selectionStart;
+    const selectionEnd = ta.selectionEnd;
+    if (selectionStart === selectionEnd) return null;
+
+    return {
+        startLine: getLineNumberFromPositionInTextarea(ta, selectionStart),
+        endLine: getLineNumberFromPositionInTextarea(ta, selectionEnd)
+    };
+}
+
+function getEditorOverlayState(editorWrap: Element): EditorOverlayState {
+    const cached = editorOverlayCache.get(editorWrap);
+    if (cached) {
+        return cached;
+    }
+
+    const activeLine = document.createElement("div");
+    activeLine.className = "active-line";
+    activeLine.hidden = true;
+
+    const selectionBlock = document.createElement("div");
+    selectionBlock.className = "selected-line";
+    selectionBlock.hidden = true;
+
+    editorWrap.appendChild(activeLine);
+    editorWrap.appendChild(selectionBlock);
+
+    const state = { activeLine, selectionBlock };
+    editorOverlayCache.set(editorWrap, state);
+    return state;
 }
 
 /**
@@ -175,23 +263,13 @@ export function updateActiveLineHighlight(
     ta: HTMLTextAreaElement,
     editorWrap: Element
 ): void {
-    const existingHighlights = editorWrap.querySelectorAll('.active-line');
-    existingHighlights.forEach(el => el.remove());
-
-    const cursorPos = ta.selectionStart;
-    const text = ta.value;
-    const lineNumber = getLineNumberFromPosition(text, cursorPos);
-
-    const highlight = document.createElement('div');
-    highlight.className = 'active-line';
-
+    const { activeLine } = getEditorOverlayState(editorWrap);
+    const lineNumber = getLineNumberFromPositionInTextarea(ta, ta.selectionStart);
     const lineHeight = getLineHeight(ta);
     const top = (lineNumber - 1) * lineHeight + parseInt(window.getComputedStyle(ta).paddingTop);
-
-    highlight.style.top = `${top}px`;
-    highlight.style.height = `${lineHeight}px`;
-
-    editorWrap.appendChild(highlight);
+    activeLine.hidden = false;
+    activeLine.style.top = `${top}px`;
+    activeLine.style.height = `${lineHeight}px`;
 }
 
 /**
@@ -201,27 +279,21 @@ export function updateSelectedLinesHighlight(
     ta: HTMLTextAreaElement,
     editorWrap: Element
 ): void {
-    const existingHighlights = editorWrap.querySelectorAll('.selected-line');
-    existingHighlights.forEach(el => el.remove());
+    const { selectionBlock } = getEditorOverlayState(editorWrap);
+    const range = getSelectionLineRange(ta);
+    if (!range) {
+        selectionBlock.hidden = true;
+        return;
+    }
 
-    const selectionStart = ta.selectionStart;
-    const selectionEnd = ta.selectionEnd;
-    if (selectionStart === selectionEnd) return;
-
-    const text = ta.value;
-    const startLine = getLineNumberFromPosition(text, selectionStart);
-    const endLine = getLineNumberFromPosition(text, selectionEnd);
     const lineHeight = getLineHeight(ta);
     const paddingTop = parseInt(window.getComputedStyle(ta).paddingTop);
+    const top = (range.startLine - 1) * lineHeight + paddingTop;
+    const height = (range.endLine - range.startLine + 1) * lineHeight;
 
-    for (let i = startLine; i <= endLine; i++) {
-        const highlight = document.createElement('div');
-        highlight.className = 'selected-line';
-        const top = (i - 1) * lineHeight + paddingTop;
-        highlight.style.top = `${top}px`;
-        highlight.style.height = `${lineHeight}px`;
-        editorWrap.appendChild(highlight);
-    }
+    selectionBlock.hidden = false;
+    selectionBlock.style.top = `${top}px`;
+    selectionBlock.style.height = `${height}px`;
 }
 
 // ============================================================================
@@ -466,7 +538,7 @@ export function refreshTabs(): void {
  * Gets the element to insert before during drag-and-drop
  */
 function getDragAfterElement(container: Element, x: number): Element | undefined {
-    const draggableElements = [...container.querySelectorAll(".tab-header:not([style*='opacity'])")];
+    const draggableElements = Array.from(container.querySelectorAll<Element>(".tab-header:not([style*='opacity'])"));
 
     return draggableElements.reduce<DragAfterResult>((closest, child) => {
         const box = child.getBoundingClientRect();
