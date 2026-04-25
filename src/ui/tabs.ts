@@ -41,6 +41,11 @@ interface EditorMetricsCache {
     lineStarts: number[];
 }
 
+interface TextareaStyleMetrics {
+    lineHeight: number;
+    paddingTop: number;
+}
+
 interface EditorOverlayState {
     activeLine: HTMLElement;
     selectionBlock: HTMLElement;
@@ -52,6 +57,7 @@ const MOBILE_METADATA_HINT = "Reload this website to hide mobile app metadata!";
 
 const editorMetricsCache = new WeakMap<HTMLTextAreaElement, EditorMetricsCache>();
 const editorOverlayCache = new WeakMap<Element, EditorOverlayState>();
+const textareaStyleCache = new WeakMap<HTMLTextAreaElement, TextareaStyleMetrics>();
 
 // ============================================================================
 // GETTERS
@@ -248,12 +254,26 @@ function getEditorOverlayState(editorWrap: Element): EditorOverlayState {
     return state;
 }
 
+function getTextareaStyleMetrics(ta: HTMLTextAreaElement): TextareaStyleMetrics {
+    const cached = textareaStyleCache.get(ta);
+    if (cached) {
+        return cached;
+    }
+
+    const computedStyle = window.getComputedStyle(ta);
+    const metrics = {
+        lineHeight: parseInt(computedStyle.lineHeight) || parseInt(computedStyle.fontSize) * 1.2,
+        paddingTop: parseInt(computedStyle.paddingTop) || 0
+    };
+    textareaStyleCache.set(ta, metrics);
+    return metrics;
+}
+
 /**
  * Gets line height from textarea
  */
 export function getLineHeight(ta: HTMLTextAreaElement): number {
-    const computedStyle = window.getComputedStyle(ta);
-    return parseInt(computedStyle.lineHeight) || parseInt(computedStyle.fontSize) * 1.2;
+    return getTextareaStyleMetrics(ta).lineHeight;
 }
 
 /**
@@ -265,8 +285,8 @@ export function updateActiveLineHighlight(
 ): void {
     const { activeLine } = getEditorOverlayState(editorWrap);
     const lineNumber = getLineNumberFromPositionInTextarea(ta, ta.selectionStart);
-    const lineHeight = getLineHeight(ta);
-    const top = (lineNumber - 1) * lineHeight + parseInt(window.getComputedStyle(ta).paddingTop);
+    const { lineHeight, paddingTop } = getTextareaStyleMetrics(ta);
+    const top = (lineNumber - 1) * lineHeight + paddingTop;
     activeLine.hidden = false;
     activeLine.style.top = `${top}px`;
     activeLine.style.height = `${lineHeight}px`;
@@ -286,8 +306,7 @@ export function updateSelectedLinesHighlight(
         return;
     }
 
-    const lineHeight = getLineHeight(ta);
-    const paddingTop = parseInt(window.getComputedStyle(ta).paddingTop);
+    const { lineHeight, paddingTop } = getTextareaStyleMetrics(ta);
     const top = (range.startLine - 1) * lineHeight + paddingTop;
     const height = (range.endLine - range.startLine + 1) * lineHeight;
 
@@ -518,16 +537,15 @@ export function addTab(
 /**
  * Refreshes tab display (shows/hides close buttons)
  */
-export function refreshTabs(): void {
-    const headers = qsa(".tab-header");
-    headers.forEach(h => {
+export function refreshTabs(headers: HTMLElement[] | null = null): void {
+    const resolvedHeaders = headers || qsa<HTMLElement>(".tab-header");
+    resolvedHeaders.forEach(h => {
         const closer = h.querySelector<HTMLElement>(".close");
         if (!closer) return;
-        const shouldShow = headers.length > 1 && !h.classList.contains("pinned");
+        const shouldShow = resolvedHeaders.length > 1 && !h.classList.contains("pinned");
         closer.style.display = shouldShow ? "" : "none";
     });
     syncTabColorControls();
-    focusActiveTextarea();
 }
 
 // ============================================================================
@@ -538,7 +556,11 @@ export function refreshTabs(): void {
  * Gets the element to insert before during drag-and-drop
  */
 function getDragAfterElement(container: Element, x: number): Element | undefined {
-    const draggableElements = Array.from(container.querySelectorAll<Element>(".tab-header:not([style*='opacity'])"));
+    const draggableElements = Array.from(container.children).filter((child) => {
+        return child instanceof HTMLElement
+            && child.classList.contains("tab-header")
+            && child.style.opacity !== "0.5";
+    });
 
     return draggableElements.reduce<DragAfterResult>((closest, child) => {
         const box = child.getBoundingClientRect();
@@ -594,14 +616,13 @@ export function initTabDragAndDrop(onModified: OnModifiedCallback | null = null)
             event.dataTransfer.dropEffect = "move";
         }
 
+        if (!draggedTab) return;
         const afterElement = getDragAfterElement(container, event.clientX);
-        const dragging = qs(".tab-header[style*='opacity']");
-        if (!dragging) return;
 
         if (afterElement == null) {
-            container.appendChild(dragging);
+            container.appendChild(draggedTab);
         } else {
-            container.insertBefore(dragging, afterElement);
+            container.insertBefore(draggedTab, afterElement);
         }
     });
 

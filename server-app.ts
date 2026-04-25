@@ -73,18 +73,29 @@ const STATIC_ASSETS: Array<[route: string, fileName: string]> = [
     ['/favicon.ico', 'icon.png']
 ];
 
+const runtimeFileCache = new Map<string, string>();
+
 function resolveRuntimeFile(fileName: string): string {
+    const cached = runtimeFileCache.get(fileName);
+    if (cached) {
+        return cached;
+    }
+
     for (const baseDir of RUNTIME_FILE_SEARCH_DIRS) {
         const candidate = path.join(baseDir, fileName);
         if (fs.existsSync(candidate)) {
+            runtimeFileCache.set(fileName, candidate);
             return candidate;
         }
     }
 
-    return path.join(PROJECT_ROOT, fileName);
+    const fallback = path.join(PROJECT_ROOT, fileName);
+    runtimeFileCache.set(fileName, fallback);
+    return fallback;
 }
 
 const INDEX_FILE = resolveRuntimeFile('index.html');
+const STATIC_ASSET_FILES = new Map(STATIC_ASSETS.map(([route, fileName]) => [route, resolveRuntimeFile(fileName)]));
 
 let mongoClient: MongoClient | null = null;
 let mongoDb: Db | null = null;
@@ -111,19 +122,39 @@ function loadDB(): FileDB {
     }
 }
 
-function saveDB(db: FileDB): void {
-    try {
-        const dir = path.dirname(DB_FILE);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+class FileDatabaseStore {
+    private writeQueue: Promise<void> = Promise.resolve();
+    private directoryReady = false;
+
+    load(): FileDB {
+        return loadDB();
+    }
+
+    save(db: FileDB): Promise<void> {
+        this.writeQueue = this.writeQueue.then(async () => {
+            try {
+                await this.ensureDirectory();
+                await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+            } catch (error) {
+                console.error('Database save error:', error);
+                throw error;
+            }
+        });
+
+        return this.writeQueue;
+    }
+
+    private async ensureDirectory(): Promise<void> {
+        if (this.directoryReady) {
+            return;
         }
 
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-    } catch (error) {
-        console.error('Database save error:', error);
-        throw error;
+        await fs.promises.mkdir(path.dirname(DB_FILE), { recursive: true });
+        this.directoryReady = true;
     }
 }
+
+const fileDatabaseStore = new FileDatabaseStore();
 
 async function connectMongoDB(): Promise<void> {
     if (mongoDb) {
@@ -165,7 +196,7 @@ class Database {
     private fileDb: FileDB;
 
     constructor() {
-        this.fileDb = DB_TYPE === 'file' ? loadDB() : { sites: {} };
+        this.fileDb = DB_TYPE === 'file' ? fileDatabaseStore.load() : { sites: {} };
     }
 
     async getSite(siteKey: string): Promise<SiteData | null> {
@@ -197,7 +228,7 @@ class Database {
         }
 
         this.fileDb.sites[siteKey] = data;
-        saveDB(this.fileDb);
+        await fileDatabaseStore.save(this.fileDb);
     }
 
     async deleteSite(siteKey: string): Promise<void> {
@@ -207,7 +238,7 @@ class Database {
         }
 
         delete this.fileDb.sites[siteKey];
-        saveDB(this.fileDb);
+        await fileDatabaseStore.save(this.fileDb);
     }
 }
 
@@ -238,18 +269,7 @@ async function initializeDatabase(): Promise<void> {
     }
 }
 
-app.use(express.json({
-    limit: MAX_CONTENT_SIZE,
-    verify: (_req: Request, _res: Response, buf: Buffer) => {
-        try {
-            JSON.parse(buf.toString());
-        } catch {
-            const error = new Error('Invalid JSON') as Error & { status?: number };
-            error.status = 400;
-            throw error;
-        }
-    }
-}));
+app.use(express.json({ limit: MAX_CONTENT_SIZE }));
 
 if (NODE_ENV === 'production') {
     app.use((req: Request, res: Response, next: NextFunction) => {
@@ -264,7 +284,7 @@ if (NODE_ENV === 'production') {
 
 for (const [route, fileName] of STATIC_ASSETS) {
     app.get(route, (_req: Request, res: Response) => {
-        res.sendFile(resolveRuntimeFile(fileName));
+        res.sendFile(STATIC_ASSET_FILES.get(route) || resolveRuntimeFile(fileName));
     });
 }
 

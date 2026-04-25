@@ -20,6 +20,8 @@ interface SearchState {
     query: string;
     results: SearchResult[];
     selectedIndex: number;
+    totalMatches: number;
+    hitLimit: boolean;
 }
 
 interface SearchIndexEntry {
@@ -34,14 +36,19 @@ const searchState: SearchState = {
     isOpen: false,
     query: "",
     results: [],
-    selectedIndex: -1
+    selectedIndex: -1,
+    totalMatches: 0,
+    hitLimit: false
 };
 
 let searchDialog: HTMLDialogElement | null = null;
 let searchInput: HTMLInputElement | null = null;
 let resultsContainer: HTMLElement | null = null;
 const searchIndex = new Map<string, SearchIndexEntry>();
-let searchInputRaf = 0;
+const MIN_SEARCH_QUERY_LENGTH = 2;
+const MAX_SEARCH_RESULTS = 200;
+const SEARCH_INPUT_DEBOUNCE_MS = 60;
+let searchInputTimer: ReturnType<typeof setTimeout> | null = null;
 
 function escapeHtml(text: string): string {
     return text
@@ -169,32 +176,48 @@ function updateSelectedResult(): void {
 }
 
 export function searchAllTabs(query: string): SearchResult[] {
-    if (!query || query.length < 2) return [];
+    if (!query || query.length < MIN_SEARCH_QUERY_LENGTH) {
+        searchState.totalMatches = 0;
+        searchState.hitLimit = false;
+        return [];
+    }
 
     const lowerQuery = query.toLowerCase();
     const results: SearchResult[] = [];
+    let totalMatches = 0;
+    let hitLimit = false;
 
     for (const entry of syncSearchIndex()) {
         let matchIndex = entry.lowerContent.indexOf(lowerQuery);
         while (matchIndex !== -1) {
-            const lineIndex = findLineIndex(entry.lineStarts, matchIndex);
-            const lineContent = getLineText(entry.content, entry.lineStarts, lineIndex);
-            const lineStart = entry.lineStarts[lineIndex] ?? 0;
-            const matchStart = matchIndex - lineStart;
+            totalMatches++;
+            if (results.length < MAX_SEARCH_RESULTS) {
+                const lineIndex = findLineIndex(entry.lineStarts, matchIndex);
+                const lineContent = getLineText(entry.content, entry.lineStarts, lineIndex);
+                const lineStart = entry.lineStarts[lineIndex] ?? 0;
+                const matchStart = matchIndex - lineStart;
 
-            results.push({
-                tabId: entry.tabId,
-                tabTitle: entry.tabTitle,
-                lineNumber: lineIndex + 1,
-                lineContent,
-                matchStart,
-                matchEnd: matchStart + query.length
-            });
+                results.push({
+                    tabId: entry.tabId,
+                    tabTitle: entry.tabTitle,
+                    lineNumber: lineIndex + 1,
+                    lineContent,
+                    matchStart,
+                    matchEnd: matchStart + query.length
+                });
+            } else {
+                hitLimit = true;
+                break;
+            }
 
             matchIndex = entry.lowerContent.indexOf(lowerQuery, matchIndex + 1);
         }
+
+        if (hitLimit) break;
     }
 
+    searchState.totalMatches = totalMatches;
+    searchState.hitLimit = hitLimit;
     return results;
 }
 
@@ -206,9 +229,13 @@ function renderResults(): void {
         return;
     }
 
+    const resultCountLabel = `${searchState.totalMatches} result${searchState.totalMatches === 1 ? "" : "s"}`;
+    const limitNotice = searchState.hitLimit
+        ? `<span class="search-results-limit">Showing first ${searchState.results.length}</span>`
+        : "";
     const headerHtml = `
         <div class="search-results-header">
-            ${searchState.results.length} result${searchState.results.length === 1 ? "" : "s"}
+            ${resultCountLabel}${limitNotice ? ` ${limitNotice}` : ""}
         </div>
     `;
 
@@ -235,18 +262,25 @@ function scrollSelectedIntoView(): void {
     });
 }
 
+function runSearch(query: string): void {
+    searchState.query = query;
+    searchState.results = searchAllTabs(query);
+    searchState.selectedIndex = searchState.results.length > 0 ? 0 : -1;
+    renderResults();
+}
+
 function handleSearchInput(): void {
     if (!searchInput) return;
 
     const nextQuery = searchInput.value;
-    if (searchInputRaf) cancelAnimationFrame(searchInputRaf);
-    searchInputRaf = requestAnimationFrame(() => {
-        searchInputRaf = 0;
-        searchState.query = nextQuery;
-        searchState.results = searchAllTabs(searchState.query);
-        searchState.selectedIndex = searchState.results.length > 0 ? 0 : -1;
-        renderResults();
-    });
+    if (searchInputTimer) {
+        clearTimeout(searchInputTimer);
+    }
+
+    searchInputTimer = setTimeout(() => {
+        searchInputTimer = null;
+        runSearch(nextQuery);
+    }, SEARCH_INPUT_DEBOUNCE_MS);
 }
 
 export function goToResult(result: SearchResult): void {
@@ -331,6 +365,13 @@ export function openSearch(): void {
     searchState.query = "";
     searchState.results = [];
     searchState.selectedIndex = -1;
+    searchState.totalMatches = 0;
+    searchState.hitLimit = false;
+
+    if (searchInputTimer) {
+        clearTimeout(searchInputTimer);
+        searchInputTimer = null;
+    }
 
     if (searchInput) {
         searchInput.value = "";

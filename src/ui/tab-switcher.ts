@@ -11,6 +11,7 @@ interface TabInfo {
     id: string;
     title: string;
     content: string;
+    preview: string;
     isPinned: boolean;
     isModified: boolean;
     index: number;
@@ -76,11 +77,13 @@ function getAllTabs(): TabInfo[] {
         const id = header.dataset.tabId || "";
         const title = header.querySelector(".tab-title")?.textContent || "Empty Tab";
         const textarea = id ? qs<HTMLTextAreaElement>(`#${id} .textarea-contents`) : null;
+        const content = textarea?.value || "";
         return {
             header,
             id,
             title,
-            content: textarea?.value?.substring(0, 200) || "",
+            content,
+            preview: content ? `${content.substring(0, 96)}${content.length > 96 ? "..." : ""}` : "Empty",
             isPinned: header.classList.contains("pinned"),
             isModified: header.classList.contains("modified"),
             index
@@ -207,7 +210,8 @@ function renderTabList(query: string = ""): void {
     const stat = qs<HTMLElement>("#tab-switcher-stat");
     if (!list) return;
 
-    let tabs = getAllTabs();
+    const allTabs = getAllTabs();
+    let tabs = allTabs;
     if (query.trim()) {
         tabs = tabs
             .map((tab) => ({
@@ -234,7 +238,7 @@ function renderTabList(query: string = ""): void {
                     ${tab.isModified ? '<span class="modified-dot" aria-label="Unsaved changes"></span>' : ""}
                 </div>
                 <div class="tab-switcher-item-preview">
-                    ${tab.content ? escapeHtml(tab.content.substring(0, 96)) + (tab.content.length > 96 ? "..." : "") : "Empty"}
+                    ${escapeHtml(tab.preview)}
                 </div>
             </div>
             <div class="tab-switcher-item-meta">
@@ -249,9 +253,8 @@ function renderTabList(query: string = ""): void {
     `).join("");
 
     if (stat) {
-        const totalTabs = getAllTabs().length;
         const pinnedCount = tabs.filter((tab) => tab.isPinned).length;
-        stat.textContent = `${tabs.length}/${totalTabs} tabs${pinnedCount ? `, ${pinnedCount} pinned` : ""}`;
+        stat.textContent = `${tabs.length}/${allTabs.length} tabs${pinnedCount ? `, ${pinnedCount} pinned` : ""}`;
     }
 }
 
