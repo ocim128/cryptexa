@@ -94,17 +94,19 @@ function ensureSwitcherDialog(): HTMLDialogElement {
     const dialog = document.createElement("dialog");
     dialog.id = "tab-switcher-dialog";
     dialog.className = "app-dialog tab-switcher-dialog";
+    dialog.setAttribute("aria-label", "Find tab");
     dialog.innerHTML = `
         <div class="tab-switcher-container">
             <div class="tab-switcher-header">
                 <input type="text"
                        id="tab-switcher-input"
                        class="tab-switcher-input"
+                       aria-label="Find tab"
                        placeholder="Find tab"
                        autocomplete="off" />
                 <kbd class="tab-switcher-hint">Esc</kbd>
             </div>
-            <div class="tab-switcher-list" id="tab-switcher-list"></div>
+            <div class="tab-switcher-list" id="tab-switcher-list" role="listbox" aria-label="Open tabs"></div>
             <div class="tab-switcher-footer">
                 <span class="tab-switcher-stat" id="tab-switcher-stat">0 tabs</span>
                 <span class="tab-switcher-keys">Arrow keys navigate, Enter opens.</span>
@@ -131,7 +133,11 @@ function ensureSwitcherDialog(): HTMLDialogElement {
             event.preventDefault();
             if (items.length === 0) return;
             const nextIndex = (activeIndex + 1) % items.length;
-            items.forEach((item, index) => item.classList.toggle("active", index === nextIndex));
+            items.forEach((item, index) => {
+                const selected = index === nextIndex;
+                item.classList.toggle("active", selected);
+                item.setAttribute("aria-selected", String(selected));
+            });
             items[nextIndex]?.scrollIntoView({ block: "nearest" });
             return;
         }
@@ -140,7 +146,11 @@ function ensureSwitcherDialog(): HTMLDialogElement {
             event.preventDefault();
             if (items.length === 0) return;
             const previousIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
-            items.forEach((item, index) => item.classList.toggle("active", index === previousIndex));
+            items.forEach((item, index) => {
+                const selected = index === previousIndex;
+                item.classList.toggle("active", selected);
+                item.setAttribute("aria-selected", String(selected));
+            });
             items[previousIndex]?.scrollIntoView({ block: "nearest" });
             return;
         }
@@ -215,6 +225,8 @@ function renderTabList(query: string = ""): void {
 
     list.innerHTML = tabs.map((tab, index) => `
         <div class="tab-switcher-item ${index === 0 ? "active" : ""} ${tab.isPinned ? "pinned" : ""}"
+             role="option"
+             aria-selected="${index === 0 ? "true" : "false"}"
              data-tab-id="${tab.id}">
             <div class="tab-switcher-item-main">
                 <div class="tab-switcher-item-title">

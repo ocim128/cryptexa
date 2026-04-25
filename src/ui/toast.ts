@@ -2,8 +2,6 @@
  * Toast Notification System
  */
 
-import { qs } from "../utils/dom.js";
-
 export type ToastType = "info" | "success" | "error" | "warning";
 
 const TOAST_ICONS: Record<ToastType, string> = {
@@ -19,17 +17,7 @@ export function toast(
     duration: number = 4000
 ): void {
     const container = document.getElementById("toast-container");
-
-    if (!container) {
-        const outer = qs<HTMLElement>("#outer-toast");
-        const element = qs<HTMLElement>("#toast");
-        if (outer && element) {
-            element.textContent = message;
-            outer.classList.remove("hidden");
-            setTimeout(() => outer.classList.add("hidden"), duration);
-        }
-        return;
-    }
+    if (!container) return;
 
     const toastEl = document.createElement("div");
     toastEl.className = `toast ${type}`;
@@ -53,29 +41,14 @@ export function toast(
     content.append(icon, text, closeButton);
     toastEl.appendChild(content);
 
-    closeButton?.addEventListener("click", () => toastEl.remove());
+    const dismiss = (): void => {
+        if (toastEl.classList.contains("toast--leaving")) return;
+        toastEl.classList.add("toast--leaving");
+        setTimeout(() => toastEl.remove(), 180);
+    };
+
+    closeButton?.addEventListener("click", dismiss);
 
     container.appendChild(toastEl);
-    setTimeout(() => {
-        if (toastEl.parentElement) {
-            toastEl.remove();
-        }
-    }, duration);
-}
-
-export function showNotification(
-    message: string,
-    type: ToastType = "info",
-    duration: number = 5000
-): void {
-    const notification = document.createElement("div");
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-
-    setTimeout(() => notification.classList.add("show"), 10);
-    setTimeout(() => {
-        notification.classList.remove("show");
-        setTimeout(() => notification.remove(), 180);
-    }, duration);
+    setTimeout(dismiss, duration);
 }

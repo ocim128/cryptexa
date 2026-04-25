@@ -132,11 +132,11 @@ export function analyzePasswordStrength(password: string): PasswordStrength {
     } else if (score >= 70) {
         level = 'strong';
         label = 'Strong';
-        color = '#22c55e';
+        color = 'var(--success)';
     } else if (score >= 50) {
         level = 'good';
         label = 'Good';
-        color = '#eab308';
+        color = 'var(--warning)';
     } else if (score >= 30) {
         level = 'fair';
         label = 'Fair';

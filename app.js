@@ -104,16 +104,7 @@
   };
   function toast(message, type = "info", duration = 4e3) {
     const container = document.getElementById("toast-container");
-    if (!container) {
-      const outer = qs("#outer-toast");
-      const element = qs("#toast");
-      if (outer && element) {
-        element.textContent = message;
-        outer.classList.remove("hidden");
-        setTimeout(() => outer.classList.add("hidden"), duration);
-      }
-      return;
-    }
+    if (!container) return;
     const toastEl = document.createElement("div");
     toastEl.className = `toast ${type}`;
     const content = document.createElement("div");
@@ -131,13 +122,14 @@
     closeButton.textContent = String.fromCharCode(215);
     content.append(icon, text, closeButton);
     toastEl.appendChild(content);
-    closeButton?.addEventListener("click", () => toastEl.remove());
+    const dismiss = () => {
+      if (toastEl.classList.contains("toast--leaving")) return;
+      toastEl.classList.add("toast--leaving");
+      setTimeout(() => toastEl.remove(), 180);
+    };
+    closeButton?.addEventListener("click", dismiss);
     container.appendChild(toastEl);
-    setTimeout(() => {
-      if (toastEl.parentElement) {
-        toastEl.remove();
-      }
-    }, duration);
+    setTimeout(dismiss, duration);
   }
 
   // src/ui/dialogs.ts
@@ -426,10 +418,10 @@
   }
   function hexToRgba(hex, alpha) {
     const normalized = normalizeTabColor(hex);
-    if (!normalized) return `rgba(209, 95, 56, ${alpha})`;
-    const r = parseInt(normalized.slice(1, 3), 16);
-    const g = parseInt(normalized.slice(3, 5), 16);
-    const b = parseInt(normalized.slice(5, 7), 16);
+    const source = normalized || DEFAULT_TAB_MARK_COLOR;
+    const r = parseInt(source.slice(1, 3), 16);
+    const g = parseInt(source.slice(3, 5), 16);
+    const b = parseInt(source.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
   function parseTabPayload(content) {
@@ -532,15 +524,32 @@
       editorWrap.appendChild(highlight);
     }
   }
+  function getTabButton(header) {
+    return header.querySelector('[role="tab"]');
+  }
   function activateTab(headerLi) {
     const headers = qsa(".tab-header");
     const panels = qsa(".tab-panel");
     const id = headerLi.dataset.tabId;
     const panel = id ? qs(`#${id}`) : null;
-    headers.forEach((h) => h.classList.remove("active"));
-    panels.forEach((p) => p.classList.remove("active"));
+    headers.forEach((h) => {
+      h.classList.remove("active");
+      const tabButton = getTabButton(h);
+      tabButton?.setAttribute("aria-selected", "false");
+      tabButton?.setAttribute("tabindex", "-1");
+    });
+    panels.forEach((p) => {
+      p.classList.remove("active");
+      if (p instanceof HTMLElement) p.hidden = true;
+    });
     headerLi.classList.add("active");
-    if (panel) panel.classList.add("active");
+    const activeTabButton = getTabButton(headerLi);
+    activeTabButton?.setAttribute("aria-selected", "true");
+    activeTabButton?.setAttribute("tabindex", "0");
+    if (panel) {
+      panel.classList.add("active");
+      if (panel instanceof HTMLElement) panel.hidden = false;
+    }
     syncTabColorControls();
     focusActiveTextarea();
     const ta = panel?.querySelector("textarea.textarea-contents");
@@ -591,18 +600,23 @@
     const id = `tab-${tabCounter++}`;
     const parsedPayload = parseTabPayload(contentIfAvailable);
     const actualContent = parsedPayload.content;
-    const li = document.createElement("li");
+    const li = document.createElement("div");
     li.className = "tab-header";
     li.dataset.tabId = id;
     li.draggable = true;
     applyTabColor(li, parsedPayload.color);
-    const a = document.createElement("a");
-    a.href = `#${id}`;
+    const a = document.createElement("button");
+    a.type = "button";
+    a.id = `tab-button-${id}`;
     a.className = "tab-title";
+    a.setAttribute("role", "tab");
+    a.setAttribute("aria-selected", "false");
+    a.setAttribute("aria-controls", id);
+    a.setAttribute("tabindex", "-1");
     a.textContent = "Empty Tab";
     const span = document.createElement("span");
     span.className = "close";
-    span.title = "Remove Tab";
+    span.title = "Double-click to close tab";
     span.textContent = String.fromCharCode(215);
     li.appendChild(a);
     li.appendChild(span);
@@ -614,10 +628,13 @@
     const panel = document.createElement("div");
     panel.id = id;
     panel.className = "tab-panel";
+    panel.hidden = true;
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", a.id);
     panel.innerHTML = `
     <div class="editor-wrap">
       <div class="line-gutter" aria-hidden="true"></div>
-      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."></textarea>
+      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..." aria-label="Note contents"></textarea>
     </div>`;
     qs("#tabs").appendChild(panel);
     const ta = panel.querySelector("textarea.textarea-contents");
@@ -766,6 +783,33 @@
         return;
       }
       if (li) activateTab(li);
+    });
+    on(headersContainer, "keydown", (e) => {
+      const event = e;
+      const tabButton = event.target.closest('[role="tab"]');
+      if (!tabButton || !headersContainer.contains(tabButton)) return;
+      const li = tabButton.closest(".tab-header");
+      if (!li) return;
+      const headers = qsa(".tab-header");
+      const index = headers.indexOf(li);
+      if (index === -1) return;
+      let nextIndex = index;
+      if (event.key === "ArrowRight") {
+        nextIndex = (index + 1) % headers.length;
+      } else if (event.key === "ArrowLeft") {
+        nextIndex = (index - 1 + headers.length) % headers.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = headers.length - 1;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      const nextHeader = headers[nextIndex];
+      if (!nextHeader) return;
+      activateTab(nextHeader);
+      getTabButton(nextHeader)?.focus();
     });
     on(headersContainer, "dblclick", (e) => {
       const event = e;
@@ -1077,6 +1121,7 @@
     const dialog = document.createElement("dialog");
     dialog.id = "search-dialog";
     dialog.className = "app-dialog search-dialog";
+    dialog.setAttribute("aria-label", "Search open tabs");
     dialog.innerHTML = `
         <form method="dialog" class="search-shell">
             <div class="search-header">
@@ -1084,13 +1129,14 @@
                     <input type="text"
                            id="search-input"
                            class="search-input"
+                           aria-label="Search all open tabs"
                            placeholder="Search open tabs"
                            autocomplete="off"
                            spellcheck="false" />
                     <kbd class="search-kbd">Esc</kbd>
                 </div>
             </div>
-            <div id="search-results" class="search-results"></div>
+            <div id="search-results" class="search-results" aria-live="polite"></div>
             <div class="search-footer">
                 <span>Arrow keys navigate</span>
                 <span>Enter opens result</span>
@@ -1203,11 +1249,11 @@
     } else if (score >= 70) {
       level = "strong";
       label = "Strong";
-      color = "#22c55e";
+      color = "var(--success)";
     } else if (score >= 50) {
       level = "good";
       label = "Good";
-      color = "#eab308";
+      color = "var(--warning)";
     } else if (score >= 30) {
       level = "fair";
       label = "Fair";
@@ -1369,17 +1415,19 @@
     const dialog = document.createElement("dialog");
     dialog.id = "tab-switcher-dialog";
     dialog.className = "app-dialog tab-switcher-dialog";
+    dialog.setAttribute("aria-label", "Find tab");
     dialog.innerHTML = `
         <div class="tab-switcher-container">
             <div class="tab-switcher-header">
                 <input type="text"
                        id="tab-switcher-input"
                        class="tab-switcher-input"
+                       aria-label="Find tab"
                        placeholder="Find tab"
                        autocomplete="off" />
                 <kbd class="tab-switcher-hint">Esc</kbd>
             </div>
-            <div class="tab-switcher-list" id="tab-switcher-list"></div>
+            <div class="tab-switcher-list" id="tab-switcher-list" role="listbox" aria-label="Open tabs"></div>
             <div class="tab-switcher-footer">
                 <span class="tab-switcher-stat" id="tab-switcher-stat">0 tabs</span>
                 <span class="tab-switcher-keys">Arrow keys navigate, Enter opens.</span>
@@ -1401,7 +1449,11 @@
         event.preventDefault();
         if (items.length === 0) return;
         const nextIndex = (activeIndex + 1) % items.length;
-        items.forEach((item, index) => item.classList.toggle("active", index === nextIndex));
+        items.forEach((item, index) => {
+          const selected = index === nextIndex;
+          item.classList.toggle("active", selected);
+          item.setAttribute("aria-selected", String(selected));
+        });
         items[nextIndex]?.scrollIntoView({ block: "nearest" });
         return;
       }
@@ -1409,7 +1461,11 @@
         event.preventDefault();
         if (items.length === 0) return;
         const previousIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
-        items.forEach((item, index) => item.classList.toggle("active", index === previousIndex));
+        items.forEach((item, index) => {
+          const selected = index === previousIndex;
+          item.classList.toggle("active", selected);
+          item.setAttribute("aria-selected", String(selected));
+        });
         items[previousIndex]?.scrollIntoView({ block: "nearest" });
         return;
       }
@@ -1471,6 +1527,8 @@
     });
     list.innerHTML = tabs.map((tab, index) => `
         <div class="tab-switcher-item ${index === 0 ? "active" : ""} ${tab.isPinned ? "pinned" : ""}"
+             role="option"
+             aria-selected="${index === 0 ? "true" : "false"}"
              data-tab-id="${tab.id}">
             <div class="tab-switcher-item-main">
                 <div class="tab-switcher-item-title">

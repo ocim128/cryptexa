@@ -69,7 +69,6 @@ const RUNTIME_FILE_SEARCH_DIRS = NODE_ENV === 'development'
 const STATIC_ASSETS: Array<[route: string, fileName: string]> = [
     ['/app.js', 'app.js'],
     ['/styles.css', 'styles.css'],
-    ['/kinetic.css', 'kinetic.css'],
     ['/icon.png', 'icon.png'],
     ['/favicon.ico', 'icon.png']
 ];

@@ -95,11 +95,12 @@
   <main id="main-content-outter">
     <div id="tabs" class="tabs">
       <div class="tab-headers">
-        <div class="tab-headers-container">
-          <li class="tab-header active" data-tab-id="tab-0">
-            <a href="#tab-0" class="tab-title">Empty Tab</a>
-            <span class="close" title="Remove tab">&times;</span>
-          </li>
+        <div class="tab-headers-container" role="tablist" aria-label="Open note tabs">
+          <div class="tab-header active" data-tab-id="tab-0" draggable="true">
+            <button type="button" id="tab-button-tab-0" class="tab-title" role="tab" aria-selected="true"
+              aria-controls="tab-0" tabindex="0">Empty Tab</button>
+            <span class="close" title="Double-click to close tab">&times;</span>
+          </div>
         </div>
         <div class="tab-tools" aria-label="Tab tools">
           <label class="tab-mark-control" for="tab-color-picker" title="Set active note mark color">
@@ -111,32 +112,30 @@
         </div>
       </div>
 
-      <div id="tab-0" class="tab-panel active">
+      <div id="tab-0" class="tab-panel active" role="tabpanel" aria-labelledby="tab-button-tab-0">
         <div class="editor-wrap">
           <div class="line-gutter" aria-hidden="true"></div>
-          <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."></textarea>
+          <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."
+            aria-label="Note contents"></textarea>
         </div>
       </div>
     </div>
   </main>
 
-  <div id="outer-toast" class="legacy-toast hidden">
-    <div id="toast"></div>
-  </div>
-
   <div id="loader" class="loader hidden">
     <div class="spinner"></div>
   </div>
 
-  <dialog id="dialog-password" class="app-dialog">
+  <dialog id="dialog-password" class="app-dialog" aria-labelledby="dialog-password-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Unlock</p>
-        <h2>Decrypt workspace</h2>
+        <h2 id="dialog-password-title">Decrypt workspace</h2>
         <p>Enter the workspace password to decrypt notes in this browser.</p>
       </div>
       <div class="dialog-stack">
-        <input type="password" id="enterpassword" placeholder="Password" autocomplete="current-password" />
+        <input type="password" id="enterpassword" placeholder="Password" autocomplete="current-password"
+          aria-label="Workspace password" />
       </div>
       <menu class="dialog-actions">
         <button value="ok" type="button" class="primary">Decrypt</button>
@@ -144,7 +143,7 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-new-password" class="app-dialog">
+  <dialog id="dialog-new-password" class="app-dialog" aria-labelledby="dialog-new-password-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Security</p>
@@ -152,8 +151,10 @@
         <p>Use a password you will remember. Cryptexa cannot recover it.</p>
       </div>
       <div class="dialog-stack">
-        <input type="password" id="newpassword1" placeholder="New password" autocomplete="new-password" />
-        <input type="password" id="newpassword2" placeholder="Confirm password" autocomplete="new-password" />
+        <input type="password" id="newpassword1" placeholder="New password" autocomplete="new-password"
+          aria-label="New password" />
+        <input type="password" id="newpassword2" placeholder="Confirm password" autocomplete="new-password"
+          aria-label="Confirm new password" />
         <div id="passwords-empty" class="hint error hidden">Password cannot be empty.</div>
         <div id="passwords-dont-match" class="hint error hidden">Passwords do not match.</div>
       </div>
@@ -164,11 +165,11 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-confirm-reload" class="app-dialog">
+  <dialog id="dialog-confirm-reload" class="app-dialog" aria-labelledby="dialog-confirm-reload-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Reload</p>
-        <h2>Discard unsaved changes?</h2>
+        <h2 id="dialog-confirm-reload-title">Discard unsaved changes?</h2>
         <p>Reload will replace local edits with the latest encrypted content from storage.</p>
       </div>
       <menu class="dialog-actions">
@@ -178,11 +179,11 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-confirm-delete-tab" class="app-dialog">
+  <dialog id="dialog-confirm-delete-tab" class="app-dialog" aria-labelledby="dialog-confirm-delete-tab-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Tab</p>
-        <h2>Delete current tab?</h2>
+        <h2 id="dialog-confirm-delete-tab-title">Delete current tab?</h2>
         <p>This removes the active note tab from the current workspace.</p>
       </div>
       <menu class="dialog-actions">
@@ -192,11 +193,11 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-confirm-delete-site" class="app-dialog">
+  <dialog id="dialog-confirm-delete-site" class="app-dialog" aria-labelledby="dialog-confirm-delete-site-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Workspace</p>
-        <h2>Delete workspace?</h2>
+        <h2 id="dialog-confirm-delete-site-title">Delete workspace?</h2>
         <p>This removes the encrypted workspace from storage. This action cannot be undone.</p>
       </div>
       <menu class="dialog-actions">
@@ -206,15 +207,16 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-delete-password" class="app-dialog">
+  <dialog id="dialog-delete-password" class="app-dialog" aria-labelledby="dialog-delete-password-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Confirm Delete</p>
-        <h2>Enter password</h2>
+        <h2 id="dialog-delete-password-title">Enter password</h2>
         <p>Confirm the workspace password before deletion.</p>
       </div>
       <div class="dialog-stack">
-        <input type="password" id="deletepassword" placeholder="Password" autocomplete="current-password" />
+        <input type="password" id="deletepassword" placeholder="Password" autocomplete="current-password"
+          aria-label="Workspace password for deletion" />
       </div>
       <menu class="dialog-actions">
         <button value="cancel" class="secondary">Cancel</button>
@@ -223,11 +225,11 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-help" class="app-dialog app-dialog--wide">
+  <dialog id="dialog-help" class="app-dialog app-dialog--wide" aria-labelledby="dialog-help-title">
     <form method="dialog" class="dialog-shell">
       <div class="dialog-header">
         <p class="dialog-eyebrow">Reference</p>
-        <h2>Keyboard shortcuts</h2>
+        <h2 id="dialog-help-title">Keyboard shortcuts</h2>
         <p>Shortcuts are optimized for the workspace. All commands remain available through visible controls.</p>
       </div>
       <div id="help-shortcuts" class="shortcut-grid"></div>

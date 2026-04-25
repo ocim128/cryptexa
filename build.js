@@ -13,7 +13,8 @@ const path = require('path');
 
 const BUILD_DIR = 'dist';
 const PUBLIC_DIR = 'public';
-const PUBLIC_STATIC_FILES = ['styles.css', 'kinetic.css', 'icon.png'];
+const PUBLIC_STATIC_FILES = ['styles.css', 'icon.png'];
+const OBSOLETE_PUBLIC_FILES = ['kinetic.css'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore', 'vercel.json'];
 const SRC_DIR = 'src';
 
@@ -45,6 +46,16 @@ function copyFileToTargets(sourceFile, targets, outputName = sourceFile) {
   for (const targetDir of targets) {
     ensureDir(targetDir);
     fs.copyFileSync(sourceFile, path.join(targetDir, outputName));
+  }
+}
+
+function removeFileFromTargets(relativePath, targets) {
+  for (const targetDir of targets) {
+    const filePath = path.join(targetDir, relativePath);
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath, { force: true });
+      console.log(`Removed obsolete ${filePath}`);
+    }
   }
 }
 
@@ -97,6 +108,10 @@ if (fs.existsSync(BUILD_DIR)) {
 
 ensureDir(BUILD_DIR);
 ensureDir(PUBLIC_DIR);
+
+for (const file of OBSOLETE_PUBLIC_FILES) {
+  removeFileFromTargets(file, [PUBLIC_DIR, BUILD_DIR]);
+}
 
 const clientBundle = buildClientBundle();
 writeFileToTargets('app.js', clientBundle, [BUILD_DIR, PUBLIC_DIR]);

@@ -66,11 +66,11 @@ function normalizeTabColor(color: string | null | undefined): string | null {
 
 function hexToRgba(hex: string, alpha: number): string {
     const normalized = normalizeTabColor(hex);
-    if (!normalized) return `rgba(209, 95, 56, ${alpha})`;
+    const source = normalized || DEFAULT_TAB_MARK_COLOR;
 
-    const r = parseInt(normalized.slice(1, 3), 16);
-    const g = parseInt(normalized.slice(3, 5), 16);
-    const b = parseInt(normalized.slice(5, 7), 16);
+    const r = parseInt(source.slice(1, 3), 16);
+    const g = parseInt(source.slice(3, 5), 16);
+    const b = parseInt(source.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
@@ -231,16 +231,36 @@ export function updateSelectedLinesHighlight(
 /**
  * Activates a tab by its header element
  */
+function getTabButton(header: Element): HTMLElement | null {
+    return header.querySelector<HTMLElement>('[role="tab"]');
+}
+
 export function activateTab(headerLi: Element): void {
     const headers = qsa(".tab-header");
     const panels = qsa(".tab-panel");
     const id = (headerLi as HTMLElement).dataset.tabId;
     const panel = id ? qs(`#${id}`) : null;
 
-    headers.forEach(h => h.classList.remove("active"));
-    panels.forEach(p => p.classList.remove("active"));
+    headers.forEach(h => {
+        h.classList.remove("active");
+        const tabButton = getTabButton(h);
+        tabButton?.setAttribute("aria-selected", "false");
+        tabButton?.setAttribute("tabindex", "-1");
+    });
+    panels.forEach(p => {
+        p.classList.remove("active");
+        if (p instanceof HTMLElement) p.hidden = true;
+    });
+
     headerLi.classList.add("active");
-    if (panel) panel.classList.add("active");
+    const activeTabButton = getTabButton(headerLi);
+    activeTabButton?.setAttribute("aria-selected", "true");
+    activeTabButton?.setAttribute("tabindex", "0");
+
+    if (panel) {
+        panel.classList.add("active");
+        if (panel instanceof HTMLElement) panel.hidden = false;
+    }
     syncTabColorControls();
 
     focusActiveTextarea();
@@ -319,20 +339,25 @@ export function addTab(
     const parsedPayload = parseTabPayload(contentIfAvailable);
     const actualContent = parsedPayload.content;
 
-    const li = document.createElement("li");
+    const li = document.createElement("div");
     li.className = "tab-header";
     li.dataset.tabId = id;
     li.draggable = true;
     applyTabColor(li, parsedPayload.color);
 
-    const a = document.createElement("a");
-    a.href = `#${id}`;
+    const a = document.createElement("button");
+    a.type = "button";
+    a.id = `tab-button-${id}`;
     a.className = "tab-title";
+    a.setAttribute("role", "tab");
+    a.setAttribute("aria-selected", "false");
+    a.setAttribute("aria-controls", id);
+    a.setAttribute("tabindex", "-1");
     a.textContent = "Empty Tab";
 
     const span = document.createElement("span");
     span.className = "close";
-    span.title = "Remove Tab";
+    span.title = "Double-click to close tab";
     span.textContent = String.fromCharCode(215);
 
     li.appendChild(a);
@@ -347,10 +372,13 @@ export function addTab(
     const panel = document.createElement("div");
     panel.id = id;
     panel.className = "tab-panel";
+    panel.hidden = true;
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", a.id);
     panel.innerHTML = `
     <div class="editor-wrap">
       <div class="line-gutter" aria-hidden="true"></div>
-      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..."></textarea>
+      <textarea rows="1" cols="1" class="textarea-contents" placeholder="Write here..." aria-label="Note contents"></textarea>
     </div>`;
     qs("#tabs")!.appendChild(panel);
 
@@ -550,6 +578,38 @@ export function initTabsLayout(onModified: OnModifiedCallback | null = null): vo
         }
 
         if (li) activateTab(li);
+    });
+
+    on(headersContainer as HTMLElement, "keydown", (e) => {
+        const event = e as KeyboardEvent;
+        const tabButton = (event.target as Element).closest<HTMLElement>('[role="tab"]');
+        if (!tabButton || !(headersContainer as HTMLElement).contains(tabButton)) return;
+
+        const li = tabButton.closest<HTMLElement>(".tab-header");
+        if (!li) return;
+
+        const headers = qsa<HTMLElement>(".tab-header");
+        const index = headers.indexOf(li);
+        if (index === -1) return;
+
+        let nextIndex = index;
+        if (event.key === "ArrowRight") {
+            nextIndex = (index + 1) % headers.length;
+        } else if (event.key === "ArrowLeft") {
+            nextIndex = (index - 1 + headers.length) % headers.length;
+        } else if (event.key === "Home") {
+            nextIndex = 0;
+        } else if (event.key === "End") {
+            nextIndex = headers.length - 1;
+        } else {
+            return;
+        }
+
+        event.preventDefault();
+        const nextHeader = headers[nextIndex];
+        if (!nextHeader) return;
+        activateTab(nextHeader);
+        getTabButton(nextHeader)?.focus();
     });
 
     on(headersContainer as HTMLElement, "dblclick", (e) => {

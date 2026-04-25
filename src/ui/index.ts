@@ -3,7 +3,7 @@
  * Re-exports all UI-related functionality
  */
 
-export { toast, showNotification } from './toast.js';
+export { toast } from './toast.js';
 export type { ToastType } from './toast.js';
 
 export {

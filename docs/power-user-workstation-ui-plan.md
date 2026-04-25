@@ -57,7 +57,7 @@ Do not borrow literally:
 - [src/app.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/app.ts) owns event wiring and state coordination. It must not inject toolbar buttons or inline button styling.
 - [styles.css](/C:/Users/user/Documents/Repo/Cryptexa/styles.css) is the visual source of truth. Remove duplicate rules instead of layering new overrides on top.
 - [src/ui](/C:/Users/user/Documents/Repo/Cryptexa/src/ui) modules may toggle classes and build dynamic utility surfaces, but styling must come from CSS classes and tokens.
-- [kinetic.css](/C:/Users/user/Documents/Repo/Cryptexa/kinetic.css) is not part of the target visual system. Remove or isolate any remaining runtime dependency on it.
+- Kinetic CSS/runtime assets are not part of the target visual system. Do not reintroduce them into the active runtime path.
 - Treat [src/app.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/app.ts), [index.html](/C:/Users/user/Documents/Repo/Cryptexa/index.html), and [styles.css](/C:/Users/user/Documents/Repo/Cryptexa/styles.css) as source files. Do not hand-edit generated artifacts such as [app.js](/C:/Users/user/Documents/Repo/Cryptexa/app.js), [app.min.js](/C:/Users/user/Documents/Repo/Cryptexa/app.min.js), [styles.min.css](/C:/Users/user/Documents/Repo/Cryptexa/styles.min.css), `dist/*`, or `public/*`.
 - The only inline script allowed after redesign is early theme bootstrapping if needed to prevent theme flash. Landing/workspace shell logic must not remain as inline script in `index.html`.
 
@@ -114,7 +114,6 @@ Create one stable visual system before redesigning individual surfaces.
 - [src/ui/themes.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/ui/themes.ts)
 - [index.html](/C:/Users/user/Documents/Repo/Cryptexa/index.html)
 - [src/app.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/app.ts)
-- [kinetic.css](/C:/Users/user/Documents/Repo/Cryptexa/kinetic.css)
 
 ### Work
 
@@ -254,7 +253,6 @@ Bring all secondary surfaces into the same system and remove decorative noise.
 - [src/ui/search.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/ui/search.ts)
 - [src/ui/tab-switcher.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/ui/tab-switcher.ts)
 - [src/ui/dialogs.ts](/C:/Users/user/Documents/Repo/Cryptexa/src/ui/dialogs.ts)
-- [kinetic.css](/C:/Users/user/Documents/Repo/Cryptexa/kinetic.css)
 
 ### Work
 

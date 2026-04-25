@@ -268,6 +268,7 @@ export function initSearchDialog(): void {
     const dialog = document.createElement("dialog");
     dialog.id = "search-dialog";
     dialog.className = "app-dialog search-dialog";
+    dialog.setAttribute("aria-label", "Search open tabs");
     dialog.innerHTML = `
         <form method="dialog" class="search-shell">
             <div class="search-header">
@@ -275,13 +276,14 @@ export function initSearchDialog(): void {
                     <input type="text"
                            id="search-input"
                            class="search-input"
+                           aria-label="Search all open tabs"
                            placeholder="Search open tabs"
                            autocomplete="off"
                            spellcheck="false" />
                     <kbd class="search-kbd">Esc</kbd>
                 </div>
             </div>
-            <div id="search-results" class="search-results"></div>
+            <div id="search-results" class="search-results" aria-live="polite"></div>
             <div class="search-footer">
                 <span>Arrow keys navigate</span>
                 <span>Enter opens result</span>
