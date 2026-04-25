@@ -4,7 +4,7 @@
  */
 
 import { qs, qsa, on } from "../utils/dom.js";
-import { activateTab } from "./tabs.js";
+import { activateTab, getLineHeight } from "./tabs.js";
 
 export interface SearchResult {
     tabId: string;
@@ -21,7 +21,9 @@ interface SearchState {
     results: SearchResult[];
     selectedIndex: number;
     totalMatches: number;
+    visibleMatches: number;
     hitLimit: boolean;
+    hasApproximateTotal: boolean;
 }
 
 interface SearchIndexEntry {
@@ -32,19 +34,25 @@ interface SearchIndexEntry {
     lineStarts: number[];
 }
 
+const MAX_SEARCH_SCAN_MATCHES = 500;
+
 const searchState: SearchState = {
     isOpen: false,
     query: "",
     results: [],
     selectedIndex: -1,
     totalMatches: 0,
-    hitLimit: false
+    visibleMatches: 0,
+    hitLimit: false,
+    hasApproximateTotal: false
 };
 
 let searchDialog: HTMLDialogElement | null = null;
 let searchInput: HTMLInputElement | null = null;
 let resultsContainer: HTMLElement | null = null;
 const searchIndex = new Map<string, SearchIndexEntry>();
+let indexedTabIds: string[] = [];
+const pendingSearchIndexRefresh = new Set<string>();
 const MIN_SEARCH_QUERY_LENGTH = 2;
 const MAX_SEARCH_RESULTS = 200;
 const SEARCH_INPUT_DEBOUNCE_MS = 60;
@@ -110,12 +118,14 @@ function cacheTabEntry(header: HTMLElement): SearchIndexEntry | null {
     const textarea = qs<HTMLTextAreaElement>(`#${tabId} .textarea-contents`);
     if (!textarea) {
         searchIndex.delete(tabId);
+        pendingSearchIndexRefresh.delete(tabId);
         return null;
     }
 
     const content = textarea.value || "";
     const cached = searchIndex.get(tabId);
     if (cached && cached.content === content && cached.tabTitle === tabTitle) {
+        pendingSearchIndexRefresh.delete(tabId);
         return cached;
     }
 
@@ -127,27 +137,43 @@ function cacheTabEntry(header: HTMLElement): SearchIndexEntry | null {
         lineStarts: buildLineStarts(content)
     };
     searchIndex.set(tabId, entry);
+    pendingSearchIndexRefresh.delete(tabId);
     return entry;
 }
 
-function syncSearchIndex(): SearchIndexEntry[] {
-    const activeTabIds = new Set<string>();
-    const entries: SearchIndexEntry[] = [];
+function markTabSearchEntryDirty(tabId: string | null | undefined): void {
+    if (!tabId) return;
+    pendingSearchIndexRefresh.add(tabId);
+}
 
-    for (const header of qsa<HTMLElement>(".tab-header")) {
-        const entry = cacheTabEntry(header);
-        if (!entry) continue;
-        activeTabIds.add(entry.tabId);
-        entries.push(entry);
+function syncSearchIndex(): SearchIndexEntry[] {
+    const headers = qsa<HTMLElement>(".tab-header");
+    const nextTabIds = headers
+        .map((header) => header.dataset.tabId)
+        .filter((tabId): tabId is string => Boolean(tabId));
+
+    for (const tabId of indexedTabIds) {
+        if (!nextTabIds.includes(tabId)) {
+            searchIndex.delete(tabId);
+            pendingSearchIndexRefresh.delete(tabId);
+        }
     }
 
-    Array.from(searchIndex.keys()).forEach((tabId) => {
-        if (!activeTabIds.has(tabId)) {
+    indexedTabIds = nextTabIds;
+
+    Array.from(pendingSearchIndexRefresh).forEach((tabId) => {
+        const header = qs<HTMLElement>(`.tab-header[data-tab-id="${tabId}"]`);
+        if (!header) {
             searchIndex.delete(tabId);
+            pendingSearchIndexRefresh.delete(tabId);
+            return;
         }
+        cacheTabEntry(header);
     });
 
-    return entries;
+    return indexedTabIds
+        .map((tabId) => searchIndex.get(tabId) || cacheTabEntry(qs<HTMLElement>(`.tab-header[data-tab-id="${tabId}"]`)!))
+        .filter((entry): entry is SearchIndexEntry => Boolean(entry));
 }
 
 function getSearchMessage(): string {
@@ -178,14 +204,16 @@ function updateSelectedResult(): void {
 export function searchAllTabs(query: string): SearchResult[] {
     if (!query || query.length < MIN_SEARCH_QUERY_LENGTH) {
         searchState.totalMatches = 0;
+        searchState.visibleMatches = 0;
         searchState.hitLimit = false;
+        searchState.hasApproximateTotal = false;
         return [];
     }
 
     const lowerQuery = query.toLowerCase();
     const results: SearchResult[] = [];
     let totalMatches = 0;
-    let hitLimit = false;
+    let hasApproximateTotal = false;
 
     for (const entry of syncSearchIndex()) {
         let matchIndex = entry.lowerContent.indexOf(lowerQuery);
@@ -205,19 +233,26 @@ export function searchAllTabs(query: string): SearchResult[] {
                     matchStart,
                     matchEnd: matchStart + query.length
                 });
-            } else {
-                hitLimit = true;
+            }
+
+            if (totalMatches >= MAX_SEARCH_SCAN_MATCHES) {
+                hasApproximateTotal = true;
+                matchIndex = -1;
                 break;
             }
 
             matchIndex = entry.lowerContent.indexOf(lowerQuery, matchIndex + 1);
         }
 
-        if (hitLimit) break;
+        if (hasApproximateTotal) {
+            break;
+        }
     }
 
     searchState.totalMatches = totalMatches;
-    searchState.hitLimit = hitLimit;
+    searchState.visibleMatches = results.length;
+    searchState.hitLimit = totalMatches > results.length || hasApproximateTotal;
+    searchState.hasApproximateTotal = hasApproximateTotal;
     return results;
 }
 
@@ -229,9 +264,12 @@ function renderResults(): void {
         return;
     }
 
-    const resultCountLabel = `${searchState.totalMatches} result${searchState.totalMatches === 1 ? "" : "s"}`;
+    const resultTotal = searchState.hasApproximateTotal
+        ? `${searchState.totalMatches}+`
+        : String(searchState.totalMatches);
+    const resultCountLabel = `${resultTotal} result${searchState.totalMatches === 1 && !searchState.hasApproximateTotal ? "" : "s"}`;
     const limitNotice = searchState.hitLimit
-        ? `<span class="search-results-limit">Showing first ${searchState.results.length}</span>`
+        ? `<span class="search-results-limit">Showing first ${searchState.visibleMatches}</span>`
         : "";
     const headerHtml = `
         <div class="search-results-header">
@@ -291,7 +329,7 @@ export function goToResult(result: SearchResult): void {
     }
 
     activateTab(tabHeader);
-    setTimeout(() => {
+    requestAnimationFrame(() => {
         const textarea = qs<HTMLTextAreaElement>(`#${result.tabId} .textarea-contents`);
         if (!textarea) return;
 
@@ -303,9 +341,9 @@ export function goToResult(result: SearchResult): void {
         textarea.focus();
         textarea.setSelectionRange(charPosition, charPosition + (result.matchEnd - result.matchStart));
 
-        const lineHeight = parseInt(getComputedStyle(textarea).lineHeight, 10) || 24;
+        const lineHeight = getLineHeight(textarea) || 24;
         textarea.scrollTop = Math.max(0, (result.lineNumber - 5) * lineHeight);
-    }, 100);
+    });
 
     closeSearch();
 }
@@ -366,7 +404,9 @@ export function openSearch(): void {
     searchState.results = [];
     searchState.selectedIndex = -1;
     searchState.totalMatches = 0;
+    searchState.visibleMatches = 0;
     searchState.hitLimit = false;
+    searchState.hasApproximateTotal = false;
 
     if (searchInputTimer) {
         clearTimeout(searchInputTimer);
@@ -452,4 +492,12 @@ export function initSearchDialog(): void {
 
 export function initGlobalSearch(): void {
     initSearchDialog();
+    indexedTabIds = qsa<HTMLElement>(".tab-header")
+        .map((header) => header.dataset.tabId)
+        .filter((tabId): tabId is string => Boolean(tabId));
+    indexedTabIds.forEach((tabId) => pendingSearchIndexRefresh.add(tabId));
+}
+
+export function markSearchIndexDirty(tabId: string | null | undefined): void {
+    markTabSearchEntryDirty(tabId);
 }

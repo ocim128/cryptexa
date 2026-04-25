@@ -59,7 +59,10 @@ export function updateToggle(theme: ThemePreference): void {
 }
 
 export function initTheme(): void {
-    const initial = (getStored() || "light") as ThemePreference;
+    const stored = getStored();
+    const initial: ThemePreference = stored === "dark" || stored === "light"
+        ? stored
+        : getSystemPref();
     applyTheme(initial);
 }
 

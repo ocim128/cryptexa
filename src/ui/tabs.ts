@@ -39,6 +39,7 @@ interface EditorMetricsCache {
     value: string;
     newlineCount: number;
     lineStarts: number[];
+    gutterLines: string;
 }
 
 interface TextareaStyleMetrics {
@@ -158,10 +159,10 @@ export function updateGutterForTextarea(
     gutter: HTMLElement | null
 ): void {
     if (!ta || !gutter) return;
-    const count = Math.max(1, getEditorMetrics(ta).newlineCount + 1);
-    let out = "1";
-    for (let i = 2; i <= count; i++) out += "\n" + i;
-    gutter.setAttribute("data-lines", out);
+    const metrics = getEditorMetrics(ta);
+    if (gutter.getAttribute("data-lines") !== metrics.gutterLines) {
+        gutter.setAttribute("data-lines", metrics.gutterLines);
+    }
     const y = Math.round(ta.scrollTop || 0);
     gutter.style.setProperty("--gutter-scroll-y", String(-y));
     gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
@@ -198,7 +199,18 @@ function getEditorMetrics(ta: HTMLTextAreaElement): EditorMetricsCache {
         }
     }
 
-    const metrics = { value, newlineCount, lineStarts };
+    const lineCount = Math.max(1, newlineCount + 1);
+    const gutterParts = new Array<string>(lineCount);
+    for (let index = 0; index < lineCount; index++) {
+        gutterParts[index] = String(index + 1);
+    }
+
+    const metrics = {
+        value,
+        newlineCount,
+        lineStarts,
+        gutterLines: gutterParts.join("\n")
+    };
     editorMetricsCache.set(ta, metrics);
     return metrics;
 }
@@ -365,12 +377,6 @@ export function activateTab(headerLi: Element): void {
     gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
     gutter.style.removeProperty("top");
     gutter.style.transform = "translateZ(0)";
-
-    const needsHeavyUpdate = ta.value.length > 50000;
-    if (needsHeavyUpdate) {
-        setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
-        return;
-    }
 
     updateGutterForTextarea(ta, gutter);
 }

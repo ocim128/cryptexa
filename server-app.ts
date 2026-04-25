@@ -131,17 +131,20 @@ class FileDatabaseStore {
     }
 
     save(db: FileDB): Promise<void> {
-        this.writeQueue = this.writeQueue.then(async () => {
-            try {
-                await this.ensureDirectory();
-                await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-            } catch (error) {
-                console.error('Database save error:', error);
-                throw error;
-            }
-        });
+        const writeTask = this.writeQueue
+            .catch(() => undefined)
+            .then(async () => {
+                try {
+                    await this.ensureDirectory();
+                    await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+                } catch (error) {
+                    console.error('Database save error:', error);
+                    throw error;
+                }
+            });
 
-        return this.writeQueue;
+        this.writeQueue = writeTask;
+        return writeTask;
     }
 
     private async ensureDirectory(): Promise<void> {

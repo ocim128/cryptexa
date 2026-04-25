@@ -12,7 +12,7 @@ import { qs, qsa, on, setPasswordMode } from "./utils/dom.js";
 import { toast } from "./ui/toast.js";
 import { openPasswordDialog } from "./ui/dialogs.js";
 import { initTheme, wireThemeToggle } from "./ui/themes.js";
-import { initGlobalSearch, openSearch } from "./ui/search.js";
+import { initGlobalSearch, openSearch, markSearchIndexDirty } from "./ui/search.js";
 import { initPasswordStrengthIndicators } from "./ui/password-strength.js";
 import { initTabSwitcher, openTabSwitcher, setTabModified, clearAllModified } from "./ui/tab-switcher.js";
 import {
@@ -110,6 +110,10 @@ function scheduleEditorHighlightUpdate(textarea: HTMLTextAreaElement): void {
         updateActiveLineHighlight(textarea, editorWrap);
         updateSelectedLinesHighlight(textarea, editorWrap);
     });
+}
+
+function scheduleNextFrame(callback: () => void): void {
+    requestAnimationFrame(() => callback());
 }
 
 function getState(): ClientState {
@@ -545,6 +549,7 @@ function wireWorkspaceEvents(): void {
                 if (!isHuge && start <= 201 && activeTabTitle) {
                     activeTabTitle.textContent = getTitleFromContent(textarea.value.substring(0, 200));
                 }
+                markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
             } catch {
                 void 0;
             }
@@ -589,22 +594,23 @@ function wireWorkspaceEvents(): void {
         if (!event.target.classList.contains("textarea-contents")) return;
 
         const textarea = event.target;
-        setTimeout(() => {
+        scheduleNextFrame(() => {
             scheduleEditorHighlightUpdate(textarea);
-        }, 0);
+        });
     });
 
     document.addEventListener("paste", (event) => {
         if (!(event.target instanceof HTMLTextAreaElement)) return;
         if (!event.target.classList.contains("textarea-contents")) return;
 
+        const textarea = event.target;
         const activeTabTitle = getCurrentTabTitle();
-        setTimeout(() => {
-            const textarea = event.target as HTMLTextAreaElement;
+        scheduleNextFrame(() => {
             const isHuge = textarea.value.length > 50000;
             if (!isHuge && activeTabTitle) {
                 activeTabTitle.textContent = getTitleFromContent();
             }
+            markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
 
             const gutter = textarea.closest(".tab-panel")?.querySelector<HTMLElement>(".line-gutter") || null;
             if (!gutter) return;
@@ -617,7 +623,7 @@ function wireWorkspaceEvents(): void {
                 updateGutterForTextarea(textarea, gutter);
             }
             scheduleEditorHighlightUpdate(textarea);
-        }, 50);
+        });
     });
 
     document.addEventListener("keydown", (event) => {
@@ -633,6 +639,8 @@ function wireWorkspaceEvents(): void {
         textarea.value = value.substring(0, start) + "    " + value.substring(end);
         textarea.selectionStart = textarea.selectionEnd = start + 4;
         getState().updateIsTextModified(true);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        scheduleEditorHighlightUpdate(textarea);
     });
 
 }

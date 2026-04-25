@@ -247,7 +247,7 @@ Default site ID is `local-notes`. To change:
 npm run dev          # Start development server
 npm run prod         # Start production server
 npm run build        # Build dist/ and public/ for deployment
-npm test             # Run tests (placeholder)
+npm test             # Run the Vitest unit suite
 ```
 
 ### Project Structure
