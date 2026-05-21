@@ -18,7 +18,8 @@ import path from 'path';
 import fs from 'fs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, MongoServerError } from 'mongodb';
+import { normalizeSiteKey, validateEncryptedContent, validateHashToken } from './src/server/validation.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,23 @@ const PROJECT_ROOT = process.cwd();
 const PUBLIC_DIR = path.join(PROJECT_ROOT, 'public');
 const IS_VERCEL = Boolean(process.env.VERCEL);
 const MAX_CONTENT_SIZE = process.env.MAX_CONTENT_SIZE || '4mb';
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const DEFAULT_RATE_LIMIT_MAX = NODE_ENV === 'production' ? 100 : 1000;
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+    if (!value) {
+        return fallback;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const RATE_LIMIT_WINDOW_MS = parsePositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
+const RATE_LIMIT_MAX = parsePositiveInteger(
+    process.env.RATE_LIMIT_MAX || process.env.RATE_LIMIT_REQUESTS || process.env.RATE_LIMIT_MAX_REQUESTS,
+    DEFAULT_RATE_LIMIT_MAX
+);
 
 if (NODE_ENV === 'production') {
     app.set('trust proxy', 1);
@@ -50,8 +68,8 @@ app.use(helmet({
 }));
 
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: NODE_ENV === 'production' ? 100 : 1000,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: RATE_LIMIT_MAX,
     message: { status: 'error', message: 'Too many requests, please try again later.' } as any,
     standardHeaders: true,
     legacyHeaders: false
@@ -70,7 +88,10 @@ const STATIC_ASSETS: Array<[route: string, fileName: string]> = [
     ['/app.js', 'app.js'],
     ['/styles.css', 'styles.css'],
     ['/icon.png', 'icon.png'],
-    ['/favicon.ico', 'icon.png']
+    ['/favicon-32.png', 'favicon-32.png'],
+    ['/favicon-16.png', 'favicon-16.png'],
+    ['/apple-touch-icon.png', 'apple-touch-icon.png'],
+    ['/favicon.ico', 'favicon-32.png']
 ];
 
 const runtimeFileCache = new Map<string, string>();
@@ -94,6 +115,20 @@ function resolveRuntimeFile(fileName: string): string {
     return fallback;
 }
 
+function redactRequestUrl(requestUrl: string): string {
+    try {
+        const url = new URL(requestUrl, 'http://localhost');
+        if (url.search.startsWith('?') && url.search.length > 1 && !url.search.includes('=')) {
+            url.search = '?[redacted]';
+        } else if (url.searchParams.has('password')) {
+            url.searchParams.set('password', '[redacted]');
+        }
+        return `${url.pathname}${url.search}`;
+    } catch {
+        return requestUrl.replace(/([?&]password=)[^&]*/gi, '$1[redacted]');
+    }
+}
+
 const INDEX_FILE = resolveRuntimeFile('index.html');
 const STATIC_ASSET_FILES = new Map(STATIC_ASSETS.map(([route, fileName]) => [route, resolveRuntimeFile(fileName)]));
 
@@ -105,7 +140,7 @@ let databaseInitPromise: Promise<void> | null = null;
 interface SiteData {
     site?: string;
     encryptedContent: string;
-    currentHashContent: string;
+    currentHashContent: string | null;
     updatedAt: number;
 }
 
@@ -114,11 +149,23 @@ interface FileDB {
 }
 
 function loadDB(): FileDB {
+    if (!fs.existsSync(DB_FILE)) {
+        return { sites: {} };
+    }
+
     try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         return JSON.parse(raw) as FileDB;
-    } catch {
-        return { sites: {} };
+    } catch (error) {
+        const backupFile = `${DB_FILE}.bak`;
+        try {
+            const raw = fs.readFileSync(backupFile, 'utf-8');
+            console.warn(`Database file could not be read; loaded backup ${backupFile}`);
+            return JSON.parse(raw) as FileDB;
+        } catch {
+            console.error('Database load error:', error);
+            return { sites: {} };
+        }
     }
 }
 
@@ -134,10 +181,16 @@ class FileDatabaseStore {
         const writeTask = this.writeQueue
             .catch(() => undefined)
             .then(async () => {
+                const tmpFile = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
                 try {
                     await this.ensureDirectory();
-                    await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+                    if (fs.existsSync(DB_FILE)) {
+                        await fs.promises.copyFile(DB_FILE, `${DB_FILE}.bak`);
+                    }
+                    await fs.promises.writeFile(tmpFile, JSON.stringify(db), 'utf-8');
+                    await fs.promises.rename(tmpFile, DB_FILE);
                 } catch (error) {
+                    await fs.promises.rm(tmpFile, { force: true }).catch(() => undefined);
                     console.error('Database save error:', error);
                     throw error;
                 }
@@ -197,9 +250,19 @@ async function connectMongoDB(): Promise<void> {
 
 class Database {
     private fileDb: FileDB;
+    private fileMutationQueue: Promise<void> = Promise.resolve();
 
     constructor() {
         this.fileDb = DB_TYPE === 'file' ? fileDatabaseStore.load() : { sites: {} };
+    }
+
+    private runFileMutation<T>(task: () => Promise<T>): Promise<T> {
+        const mutation = this.fileMutationQueue
+            .catch(() => undefined)
+            .then(task);
+
+        this.fileMutationQueue = mutation.then(() => undefined, () => undefined);
+        return mutation;
     }
 
     async getSite(siteKey: string): Promise<SiteData | null> {
@@ -215,33 +278,90 @@ class Database {
         return this.fileDb.sites[siteKey] || null;
     }
 
-    async saveSite(siteKey: string, data: SiteData): Promise<void> {
+    async saveSiteIfUnchanged(siteKey: string, initHashContent: string, data: SiteData): Promise<boolean> {
         if (DB_TYPE === 'mongodb' && mongoDb) {
-            await mongoDb.collection<SiteData>('sites').replaceOne(
-                { site: siteKey },
-                {
+            const collection = mongoDb.collection<SiteData>('sites');
+            const document: SiteData = {
+                site: siteKey,
+                encryptedContent: data.encryptedContent,
+                currentHashContent: data.currentHashContent,
+                updatedAt: data.updatedAt
+            };
+            const currentHashFilter = initHashContent
+                ? { site: siteKey, currentHashContent: initHashContent }
+                : {
                     site: siteKey,
-                    encryptedContent: data.encryptedContent,
-                    currentHashContent: data.currentHashContent,
-                    updatedAt: data.updatedAt
-                },
-                { upsert: true }
-            );
-            return;
+                    $or: [
+                        { currentHashContent: '' },
+                        { currentHashContent: null },
+                        { currentHashContent: { $exists: false } }
+                    ]
+                };
+
+            const updateResult = await collection.updateOne(currentHashFilter, { $set: document });
+            if (updateResult.matchedCount > 0) {
+                return true;
+            }
+
+            try {
+                await collection.insertOne(document);
+                return true;
+            } catch (error) {
+                if (error instanceof MongoServerError && error.code === 11000) {
+                    return false;
+                }
+                throw error;
+            }
         }
 
-        this.fileDb.sites[siteKey] = data;
-        await fileDatabaseStore.save(this.fileDb);
+        return this.runFileMutation(async () => {
+            const existing = this.fileDb.sites[siteKey] || null;
+            if (existing && (existing.currentHashContent || '') !== initHashContent) {
+                return false;
+            }
+
+            this.fileDb.sites[siteKey] = data;
+            await fileDatabaseStore.save(this.fileDb);
+            return true;
+        });
     }
 
-    async deleteSite(siteKey: string): Promise<void> {
+    async deleteSiteIfUnchanged(siteKey: string, initHashContent: string): Promise<boolean> {
         if (DB_TYPE === 'mongodb' && mongoDb) {
-            await mongoDb.collection('sites').deleteOne({ site: siteKey });
-            return;
+            const collection = mongoDb.collection('sites');
+            const currentHashFilter = initHashContent
+                ? { site: siteKey, currentHashContent: initHashContent }
+                : {
+                    site: siteKey,
+                    $or: [
+                        { currentHashContent: '' },
+                        { currentHashContent: null },
+                        { currentHashContent: { $exists: false } }
+                    ]
+                };
+            const deleteResult = await collection.deleteOne(currentHashFilter);
+            if (deleteResult.deletedCount > 0) {
+                return true;
+            }
+
+            const existing = await collection.findOne({ site: siteKey });
+            return !existing;
         }
 
-        delete this.fileDb.sites[siteKey];
-        await fileDatabaseStore.save(this.fileDb);
+        return this.runFileMutation(async () => {
+            const existing = this.fileDb.sites[siteKey] || null;
+            if (!existing) {
+                return true;
+            }
+
+            if ((existing.currentHashContent || '') !== initHashContent) {
+                return false;
+            }
+
+            delete this.fileDb.sites[siteKey];
+            await fileDatabaseStore.save(this.fileDb);
+            return true;
+        });
     }
 }
 
@@ -279,7 +399,7 @@ if (NODE_ENV === 'production') {
         const start = Date.now();
         res.on('finish', () => {
             const duration = Date.now() - start;
-            console.log(`${new Date().toISOString()} ${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
+            console.log(`${new Date().toISOString()} ${req.method} ${redactRequestUrl(req.url)} ${res.statusCode} ${duration}ms`);
         });
         next();
     });
@@ -319,12 +439,12 @@ app.get('/:site', (req: Request, res: Response, next: NextFunction) => {
 
 app.get('/api/json', async (req: Request, res: Response): Promise<Response> => {
     try {
-        const site = String(req.query.site || '').trim();
-        if (!site) {
-            return res.status(400).json({ status: 'error', message: 'Missing site' });
+        const siteValidation = normalizeSiteKey(req.query.site);
+        if (!siteValidation.ok) {
+            return res.status(400).json({ status: 'error', message: siteValidation.message });
         }
 
-        const entry = await database.getSite(site);
+        const entry = await database.getSite(siteValidation.value);
         if (!entry) {
             return res.json({
                 status: 'success',
@@ -353,28 +473,42 @@ app.get('/api/json', async (req: Request, res: Response): Promise<Response> => {
 app.post('/api/save', async (req: Request, res: Response): Promise<Response> => {
     try {
         const { site, initHashContent, currentHashContent, encryptedContent } = req.body || {};
-        if (!site || typeof initHashContent !== 'string' || typeof currentHashContent !== 'string' || typeof encryptedContent !== 'string') {
-            return res.status(400).json({ status: 'error', message: 'Missing required fields' });
+
+        const siteValidation = normalizeSiteKey(site);
+        if (!siteValidation.ok) {
+            return res.status(400).json({ status: 'error', message: siteValidation.message });
         }
 
-        const siteKey = String(site).trim();
-        const existing = await database.getSite(siteKey);
+        const initHashValidation = validateHashToken(initHashContent, 'initHashContent');
+        if (!initHashValidation.ok) {
+            return res.status(400).json({ status: 'error', message: initHashValidation.message });
+        }
 
-        if (existing && (existing.currentHashContent || '') !== initHashContent) {
+        const currentHashValidation = validateHashToken(currentHashContent, 'currentHashContent');
+        if (!currentHashValidation.ok) {
+            return res.status(400).json({ status: 'error', message: currentHashValidation.message });
+        }
+
+        const encryptedContentValidation = validateEncryptedContent(encryptedContent);
+        if (!encryptedContentValidation.ok) {
+            return res.status(400).json({ status: 'error', message: encryptedContentValidation.message });
+        }
+
+        const siteKey = siteValidation.value;
+        const wasSaved = await database.saveSiteIfUnchanged(siteKey, initHashValidation.value, {
+            encryptedContent: encryptedContentValidation.value,
+            currentHashContent: currentHashValidation.value,
+            updatedAt: Date.now()
+        });
+
+        if (!wasSaved) {
             return res.json({
                 status: 'error',
                 message: 'Site was modified in the meantime.'
             });
         }
 
-        const siteData: SiteData = {
-            encryptedContent,
-            currentHashContent,
-            updatedAt: Date.now()
-        };
-
-        await database.saveSite(siteKey, siteData);
-        return res.json({ status: 'success', currentHashContent });
+        return res.json({ status: 'success', currentHashContent: currentHashValidation.value });
     } catch (error) {
         console.error('Save endpoint error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to save data' });
@@ -384,25 +518,24 @@ app.post('/api/save', async (req: Request, res: Response): Promise<Response> => 
 app.post('/api/delete', async (req: Request, res: Response): Promise<Response> => {
     try {
         const { site, initHashContent } = req.body || {};
-        if (!site || typeof initHashContent !== 'string') {
-            return res.status(400).json({ status: 'error', message: 'Missing required fields' });
+        const siteValidation = normalizeSiteKey(site);
+        if (!siteValidation.ok) {
+            return res.status(400).json({ status: 'error', message: siteValidation.message });
         }
 
-        const siteKey = String(site).trim();
-        const existing = await database.getSite(siteKey);
-
-        if (!existing) {
-            return res.json({ status: 'success' });
+        const initHashValidation = validateHashToken(initHashContent, 'initHashContent');
+        if (!initHashValidation.ok) {
+            return res.status(400).json({ status: 'error', message: initHashValidation.message });
         }
 
-        if ((existing.currentHashContent || '') !== initHashContent) {
+        const wasDeleted = await database.deleteSiteIfUnchanged(siteValidation.value, initHashValidation.value);
+        if (!wasDeleted) {
             return res.json({
                 status: 'error',
                 message: 'Site was modified in the meantime. Reload first.'
             });
         }
 
-        await database.deleteSite(siteKey);
         return res.json({ status: 'success' });
     } catch (error) {
         console.error('Delete endpoint error:', error);

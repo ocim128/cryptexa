@@ -13,7 +13,7 @@ const path = require('path');
 
 const BUILD_DIR = 'dist';
 const PUBLIC_DIR = 'public';
-const PUBLIC_STATIC_FILES = ['styles.css', 'icon.png'];
+const PUBLIC_STATIC_FILES = ['styles.css', 'icon.png', 'favicon-32.png', 'favicon-16.png', 'apple-touch-icon.png'];
 const OBSOLETE_PUBLIC_FILES = ['kinetic.css'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore', 'vercel.json'];
 const SRC_DIR = 'src';
@@ -133,6 +133,8 @@ if (esbuild && fs.existsSync('server-app.ts')) {
   esbuild.buildSync({
     entryPoints: ['server-app.ts'],
     platform: 'node',
+    bundle: true,
+    packages: 'external',
     outfile: path.join(BUILD_DIR, 'server.js'),
     target: 'node18',
     format: 'cjs',

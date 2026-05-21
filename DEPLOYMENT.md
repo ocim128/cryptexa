@@ -40,7 +40,7 @@ NODE_ENV=production
 PORT=10000
 DB_FILE=/opt/render/project/src/data/cryptexa.json
 MAX_CONTENT_SIZE=1mb
-RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_MAX=100
 RATE_LIMIT_WINDOW_MS=900000
 LOG_LEVEL=info
 ```
@@ -87,9 +87,10 @@ docker run -d \
 
 1. Install Node.js 18+
 2. Clone repository
-3. Install dependencies: `npm ci --production`
-4. Configure environment variables
-5. Use PM2 for process management:
+3. Install dependencies: `npm ci`
+4. Build production assets: `npm run build`
+5. Configure environment variables
+6. Use PM2 for process management:
 
 ```bash
 npm install -g pm2
@@ -143,7 +144,7 @@ server {
 | `PORT` | `3000` | Server port |
 | `DB_FILE` | `./data/cryptexa.json` | Database file path |
 | `MAX_CONTENT_SIZE` | `4mb` | Maximum request size |
-| `RATE_LIMIT_REQUESTS` | `1000` (dev), `100` (prod) | Requests per window |
+| `RATE_LIMIT_MAX` / `RATE_LIMIT_REQUESTS` | `1000` (dev), `100` (prod) | Requests per window |
 | `RATE_LIMIT_WINDOW_MS` | `900000` | Rate limit window (15 min) |
 | `LOG_LEVEL` | `info` | Logging level |
 

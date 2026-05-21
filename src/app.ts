@@ -7,8 +7,10 @@
     - src/app.ts: runtime wiring and workspace orchestration
 */
 
-import { debounce } from "./utils/fetch.js";
+import { debounce, fetchWithRetry } from "./utils/fetch.js";
 import { qs, qsa, on, setPasswordMode } from "./utils/dom.js";
+import { getSiteFromUrl, getUrlPasswordFromUrl, removeUrlPassword } from "./utils/url.js";
+import { WORKSPACE_ID_REQUIREMENTS, normalizeWorkspaceId } from "./utils/workspace.js";
 import { toast } from "./ui/toast.js";
 import { openPasswordDialog } from "./ui/dialogs.js";
 import { initTheme, wireThemeToggle } from "./ui/themes.js";
@@ -70,29 +72,17 @@ const SHORTCUTS: ShortcutDef[] = [
     { keys: "Escape", description: "Close dialog or focus editor" }
 ];
 
-function getQueryParam(name: string): string | null {
-    const url = new URL(window.location.href);
-    const value = url.searchParams.get(name);
-    return value && value.trim().length ? value.trim() : null;
-}
-
 function getSiteFromURL(): string | null {
-    const path = window.location.pathname || "/";
-    const segment = path.replace(/^\/+|\/+$/g, "");
-    if (segment && segment !== "api") return segment;
-    return getQueryParam("site");
+    return getSiteFromUrl(window.location.href);
 }
 
 const SITE_ID = getSiteFromURL();
-const URL_PASSWORD = (() => {
-    const named = getQueryParam("password");
-    if (named) return named;
-    const query = window.location.search || "";
-    if (query.startsWith("?") && query.length > 1 && !query.includes("=")) {
-        return decodeURIComponent(query.substring(1));
-    }
-    return null;
-})();
+const URL_PASSWORD_RESULT = getUrlPasswordFromUrl(window.location.href);
+const URL_PASSWORD = URL_PASSWORD_RESULT.password;
+
+if (URL_PASSWORD_RESULT.shouldScrub) {
+    window.history.replaceState(window.history.state, "", removeUrlPassword(window.location.href));
+}
 
 let state: ClientState | null = null;
 let ignoreInputEvent = true;
@@ -179,12 +169,11 @@ function setSiteLabel(siteId: string | null): void {
 }
 
 function navigateToWorkspace(siteId: string): void {
-    const password = getQueryParam("password");
-    let destination = `${window.location.origin}/${encodeURIComponent(siteId)}`;
-    if (password) {
-        destination += `?password=${encodeURIComponent(password)}`;
+    const destination = new URL(`/${encodeURIComponent(siteId)}`, window.location.origin);
+    if (URL_PASSWORD) {
+        destination.hash = `password=${encodeURIComponent(URL_PASSWORD)}`;
     }
-    window.location.href = destination;
+    window.location.href = destination.toString();
 }
 
 function initLanding(): void {
@@ -197,9 +186,9 @@ function initLanding(): void {
 
     on(form, "submit", (event) => {
         event.preventDefault();
-        const nextSite = (input.value || "").trim();
+        const nextSite = normalizeWorkspaceId(input.value || "");
         if (!nextSite) {
-            toast("Enter a workspace id.", "warning", 1800);
+            toast(WORKSPACE_ID_REQUIREMENTS, "warning", 2400);
             input.focus();
             return;
         }
@@ -273,7 +262,7 @@ function setupStatusTracking(): void {
 
 async function checkServerHealth(): Promise<boolean> {
     try {
-        const response = await fetch("/health", { method: "GET" });
+        const response = await fetchWithRetry("/health", { method: "GET" }, 1);
         return response.ok;
     } catch {
         return false;
@@ -639,7 +628,11 @@ function wireWorkspaceEvents(): void {
         textarea.value = value.substring(0, start) + "    " + value.substring(end);
         textarea.selectionStart = textarea.selectionEnd = start + 4;
         getState().updateIsTextModified(true);
+        const wasIgnoringInputEvent = ignoreInputEvent;
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        if (wasIgnoringInputEvent) {
+            markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
+        }
         scheduleEditorHighlightUpdate(textarea);
     });
 

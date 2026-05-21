@@ -239,7 +239,7 @@ export class ClientState {
                         currentHashContent: newHashContent,
                         encryptedContent: eContentPayload
                     })
-                });
+                }, 0);
 
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -328,7 +328,7 @@ export class ClientState {
                         site: this.site,
                         initHashContent: this.initHashContent || ""
                     })
-                });
+                }, 0);
 
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -399,7 +399,11 @@ export class ClientState {
 
     async reloadFromServer(): Promise<void> {
         const url = `/api/json?site=${encodeURIComponent(this.site)}`;
-        const res = await fetch(url);
+        const res = await fetchWithRetry(url);
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
         const data = await res.json() as {
             status: string;
             isNew?: boolean;

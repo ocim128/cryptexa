@@ -13,8 +13,8 @@ module.exports = defineConfig({
     retries: process.env.CI ? 2 : 0,
     /* Opt out of parallel tests on CI. */
     workers: process.env.CI ? 1 : undefined,
-    /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-    reporter: 'html',
+    /* Keep local runs from rewriting the checked-in report artifact. */
+    reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
         /* Base URL to use in actions like `await page.goto('/')`. */
@@ -34,11 +34,13 @@ module.exports = defineConfig({
 
     /* Run your local dev server before starting the tests */
     webServer: {
-        command: 'npm run start',
+        command: 'node dist/server.js',
         url: `http://127.0.0.1:${PORT}`,
         env: {
             ...process.env,
             PORT,
+            DB_TYPE: 'file',
+            DB_FILE: 'test-results/e2e-db.json',
         },
         reuseExistingServer: false,
         timeout: 120 * 1000,

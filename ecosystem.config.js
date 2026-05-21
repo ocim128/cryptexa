@@ -9,7 +9,7 @@ module.exports = {
       PORT: 3000,
       DB_FILE: './data/cryptexa.json',
       MAX_CONTENT_SIZE: '5mb',
-      RATE_LIMIT_REQUESTS: 1000,
+      RATE_LIMIT_MAX: 1000,
       RATE_LIMIT_WINDOW_MS: 900000,
       LOG_LEVEL: 'debug'
     },
@@ -18,7 +18,7 @@ module.exports = {
       PORT: 3000,
       DB_FILE: './data/cryptexa.json',
       MAX_CONTENT_SIZE: '1mb',
-      RATE_LIMIT_REQUESTS: 100,
+      RATE_LIMIT_MAX: 100,
       RATE_LIMIT_WINDOW_MS: 900000,
       LOG_LEVEL: 'info'
     },
@@ -56,7 +56,7 @@ module.exports = {
       ref: 'origin/main',
       repo: 'https://github.com/yourusername/cryptexa.git',
       path: '/var/www/cryptexa',
-      'post-deploy': 'npm ci --production && pm2 reload ecosystem.config.js --env production'
+      'post-deploy': 'npm ci && npm run build && pm2 reload ecosystem.config.js --env production'
     }
   }
 };

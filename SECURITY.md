@@ -34,7 +34,7 @@ Cryptexa is designed with security as a primary concern. This document outlines 
    DB_FILE=/secure/path/to/db.json
    MAX_CONTENT_SIZE=1048576
    RATE_LIMIT_WINDOW_MS=900000
-   RATE_LIMIT_MAX_REQUESTS=100
+   RATE_LIMIT_MAX=100
    ```
 
 2. **HTTPS Configuration**

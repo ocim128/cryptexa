@@ -18,16 +18,16 @@ export async function fetchWithRetry(
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+            timeoutId = setTimeout(() => controller.abort(), 60000);
 
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal
             });
 
-            clearTimeout(timeoutId);
             return response;
 
         } catch (error) {
@@ -41,6 +41,10 @@ export async function fetchWithRetry(
             // Exponential backoff: 1s, 2s, 4s
             const delay = Math.pow(2, attempt) * 1000;
             await new Promise(resolve => setTimeout(resolve, delay));
+        } finally {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
         }
     }
 

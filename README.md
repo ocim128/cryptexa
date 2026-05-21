@@ -36,7 +36,7 @@ A **production-ready**, secure, client-side encrypted note-taking application wi
 
 - [index.html](index.html)
 - [styles.css](styles.css)
-- [app.js](app.js)
+- [src/app.ts](src/app.ts)
 - [server.js](server.js)
 - [package.json](package.json)
 - [render.yaml](render.yaml)
@@ -45,7 +45,7 @@ A **production-ready**, secure, client-side encrypted note-taking application wi
 
 - The browser derives an AES-GCM key from the password using PBKDF2 (SHA-256).
 - Content is concatenated with a site hash and encrypted.
-- The ciphertext (and IV) is sent to the server for storage.
+- The ciphertext, PBKDF2 salt, and IV are sent to the server for storage as an encrypted payload.
 - On load, the client fetches ciphertext, then prompts for the password to decrypt locally.
 
 Server never receives the password or plaintext.
@@ -63,7 +63,7 @@ Same-origin endpoints:
   - Body: `{ site, initHashContent }`
   - Response: `{ status: "success" }` or error with message
 
-`encryptedContent` format: `"ivHex:cipherHex"`. The salt for PBKDF2 is stored locally in the browser (localStorage) and is safe to persist.
+`encryptedContent` format: `"saltHex:ivHex:cipherHex"`. The salt and IV are not secret; the server still never receives the password or plaintext.
 
 ## Production Deployment
 
@@ -74,9 +74,10 @@ Same-origin endpoints:
 cp .env.example .env
 ```
 
-2. Install production dependencies:
+2. Install dependencies and build production assets:
 ```bash
-npm install --production
+npm ci
+npm run build
 ```
 
 3. Start in production mode:
@@ -112,15 +113,7 @@ npm run prod
 - Requires `DB_TYPE=mongodb` and `MONGODB_URI` because Vercel file storage is not durable
 
 #### Docker
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "run", "prod"]
-```
+Use the included multi-stage [Dockerfile](Dockerfile). It installs dev dependencies in the build stage, generates `dist/`, prunes to production dependencies, and runs as a non-root user.
 
 ### Monitoring
 
@@ -225,14 +218,12 @@ After deploy, open the Render URL. The app loads front-end files and uses same-o
 
 ## Site ID
 
-Default site ID is `local-notes`. To change:
-- Update `const SITE_ID` in [app.js](app.js).
-- Use the same value when calling `/api/json?site=...`, `/api/save`, and `/api/delete`.
+Workspace IDs come from the URL path, for example `/my-notes`, or from `?site=...` on the landing page. Use the same value when calling `/api/json?site=...`, `/api/save`, and `/api/delete`.
 
 ## Limitations
 
 - The concurrency token uses a non-cryptographic hash purely for overwrite detection. Encryption security is handled by AES-GCM.
-- Salt is stored in localStorage by site to allow future decrypts from the same browser. If accessing from a different browser/device, the stored ciphertext will not be decryptable without the same salt. A future enhancement could embed salt in ciphertext or store salt server-side (still not secret).
+- The encryption salt is embedded in the encrypted payload so workspaces can be decrypted from another browser with the same workspace ID and password.
 
 ## Keyboard Shortcuts
 
@@ -255,7 +246,7 @@ npm test             # Run the Vitest unit suite
 ```
 cryptexa/
 ├── server.js           # Express server with security middleware
-├── app.js             # Client-side application logic
+├── src/app.ts         # Client-side application logic
 ├── index.html         # Main HTML template
 ├── styles.css         # Application styles
 ├── build.js           # Production build script

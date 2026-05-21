@@ -6,6 +6,8 @@ const { test, expect } = require('@playwright/test');
  * Tests for server API endpoints
  */
 
+const encryptedPayload = (hexChar = 'c') => `${'a'.repeat(32)}:${'b'.repeat(24)}:${hexChar.repeat(32)}`;
+
 test.describe('API Endpoints', () => {
     test('should return health check', async ({ request }) => {
         const response = await request.get('/health');
@@ -61,7 +63,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: '',
                 currentHashContent: 'testhash123',
-                encryptedContent: 'salt:iv:cipher'
+                encryptedContent: encryptedPayload()
             }
         });
 
@@ -80,7 +82,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: '',
                 currentHashContent: 'myhash',
-                encryptedContent: 'mysalt:myiv:mycipher'
+                encryptedContent: encryptedPayload()
             }
         });
 
@@ -91,7 +93,7 @@ test.describe('API Endpoints', () => {
         const data = await response.json();
         expect(data.status).toBe('success');
         expect(data.isNew).toBe(false);
-        expect(data.eContent).toBe('mysalt:myiv:mycipher');
+        expect(data.eContent).toBe(encryptedPayload());
         expect(data.currentHashContent).toBe('myhash');
     });
 
@@ -104,7 +106,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: '',
                 currentHashContent: 'hash1',
-                encryptedContent: 'content1'
+                encryptedContent: encryptedPayload('c')
             }
         });
 
@@ -114,7 +116,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: 'wronghash',
                 currentHashContent: 'hash2',
-                encryptedContent: 'content2'
+                encryptedContent: encryptedPayload('d')
             }
         });
 
@@ -133,7 +135,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: '',
                 currentHashContent: 'deletehash',
-                encryptedContent: 'deletecontent'
+                encryptedContent: encryptedPayload()
             }
         });
 
@@ -164,7 +166,7 @@ test.describe('API Endpoints', () => {
                 site: uniqueSite,
                 initHashContent: '',
                 currentHashContent: 'initial',
-                encryptedContent: 'initial-content'
+                encryptedContent: encryptedPayload('c')
             }
         });
 
@@ -175,7 +177,7 @@ test.describe('API Endpoints', () => {
                     site: uniqueSite,
                     initHashContent: 'initial',
                     currentHashContent: 'update1',
-                    encryptedContent: 'content1'
+                    encryptedContent: encryptedPayload('d')
                 }
             }),
             request.post('/api/save', {
@@ -183,18 +185,16 @@ test.describe('API Endpoints', () => {
                     site: uniqueSite,
                     initHashContent: 'initial',
                     currentHashContent: 'update2',
-                    encryptedContent: 'content2'
+                    encryptedContent: encryptedPayload('e')
                 }
             })
         ]);
 
-        // One should succeed, one should fail (or both could succeed if truly concurrent)
         const data1 = await save1.json();
         const data2 = await save2.json();
 
-        // At least one should have succeeded
         const successes = [data1, data2].filter(d => d.status === 'success').length;
-        expect(successes).toBeGreaterThanOrEqual(1);
+        expect(successes).toBe(1);
     });
 });
 
