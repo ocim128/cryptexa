@@ -6,6 +6,17 @@
 export const textEncoder = new TextEncoder();
 export const textDecoder = new TextDecoder();
 
+const hexTable = new Array(256);
+for (let i = 0; i < 256; i++) {
+    hexTable[i] = i.toString(16).padStart(2, "0");
+}
+
+const hexValueTable: Record<string, number> = {};
+for (let i = 0; i < 16; i++) {
+    hexValueTable[i.toString(16)] = i;
+    hexValueTable[i.toString(16).toUpperCase()] = i;
+}
+
 /**
  * Computes SHA-512 hash of input
  * @param input - Input to hash (string or Uint8Array)
@@ -29,7 +40,9 @@ export function bufToHex(buf: ArrayBuffer): string {
     let s = "";
     for (let i = 0; i < arr.length; i++) {
         const byte = arr[i];
-        s += byte !== undefined ? byte.toString(16).padStart(2, "0") : "";
+        if (byte !== undefined) {
+            s += hexTable[byte];
+        }
     }
     return s;
 }
@@ -40,10 +53,19 @@ export function bufToHex(buf: ArrayBuffer): string {
  * @returns ArrayBuffer
  */
 export function hexToBuf(hex: string): ArrayBuffer {
-    const len = hex.length / 2;
+    const len = Math.floor(hex.length / 2);
     const out = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
-        out[i] = parseInt(hex.substr(i * 2, 2), 16);
+        const highChar = hex[i * 2];
+        const lowChar = hex[i * 2 + 1];
+        const high = highChar !== undefined ? hexValueTable[highChar] : undefined;
+        const low = lowChar !== undefined ? hexValueTable[lowChar] : undefined;
+        if (high !== undefined && low !== undefined) {
+            out[i] = (high << 4) | low;
+        } else {
+            const parsed = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+            out[i] = isNaN(parsed) ? 0 : parsed;
+        }
     }
     return out.buffer;
 }

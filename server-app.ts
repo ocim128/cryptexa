@@ -18,6 +18,7 @@ import path from 'path';
 import fs from 'fs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import { MongoClient, Db, MongoServerError } from 'mongodb';
 import { normalizeSiteKey, validateEncryptedContent, validateHashToken } from './src/server/validation.js';
 
@@ -67,6 +68,25 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false
 }));
 
+function setStaticCacheHeaders(res: Response, filePath: string): void {
+    const baseName = path.basename(filePath);
+    if (baseName === 'index.html') {
+        res.setHeader('Cache-Control', 'no-cache');
+    } else if (/[.-][a-f0-9]{8,}\.(js|css)$/i.test(baseName)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+    } else {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+}
+
+// API no-store cache control middleware
+app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+
 const limiter = rateLimit({
     windowMs: RATE_LIMIT_WINDOW_MS,
     max: RATE_LIMIT_MAX,
@@ -82,12 +102,11 @@ const DB_TYPE = process.env.DB_TYPE || (IS_VERCEL ? 'mongodb' : 'file');
 const DB_VERSION = 2;
 const RUNTIME_FILE_SEARCH_DIRS = NODE_ENV === 'development'
     ? [PROJECT_ROOT, PUBLIC_DIR, path.join(PROJECT_ROOT, 'dist')]
-    : [PUBLIC_DIR, PROJECT_ROOT, path.join(PROJECT_ROOT, 'dist')];
+    : [PUBLIC_DIR, path.join(PROJECT_ROOT, 'dist'), PROJECT_ROOT];
 
 const STATIC_ASSETS: Array<[route: string, fileName: string]> = [
     ['/app.js', 'app.js'],
     ['/styles.css', 'styles.css'],
-    ['/icon.png', 'icon.png'],
     ['/favicon-32.png', 'favicon-32.png'],
     ['/favicon-16.png', 'favicon-16.png'],
     ['/apple-touch-icon.png', 'apple-touch-icon.png'],
@@ -149,7 +168,17 @@ interface FileDB {
 }
 
 function loadDB(): FileDB {
+    const backupFile = `${DB_FILE}.bak`;
     if (!fs.existsSync(DB_FILE)) {
+        if (fs.existsSync(backupFile)) {
+            try {
+                const raw = fs.readFileSync(backupFile, 'utf-8');
+                console.warn(`Database file missing; loaded backup ${backupFile}`);
+                return JSON.parse(raw) as FileDB;
+            } catch (error) {
+                console.error('Database backup load error:', error);
+            }
+        }
         return { sites: {} };
     }
 
@@ -157,7 +186,6 @@ function loadDB(): FileDB {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         return JSON.parse(raw) as FileDB;
     } catch (error) {
-        const backupFile = `${DB_FILE}.bak`;
         try {
             const raw = fs.readFileSync(backupFile, 'utf-8');
             console.warn(`Database file could not be read; loaded backup ${backupFile}`);
@@ -182,15 +210,29 @@ class FileDatabaseStore {
             .catch(() => undefined)
             .then(async () => {
                 const tmpFile = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
+                const backupFile = `${DB_FILE}.bak`;
+                let activeMovedToBackup = false;
                 try {
                     await this.ensureDirectory();
-                    if (fs.existsSync(DB_FILE)) {
-                        await fs.promises.copyFile(DB_FILE, `${DB_FILE}.bak`);
-                    }
                     await fs.promises.writeFile(tmpFile, JSON.stringify(db), 'utf-8');
+
+                    if (fs.existsSync(backupFile)) {
+                        await fs.promises.unlink(backupFile);
+                    }
+
+                    if (fs.existsSync(DB_FILE)) {
+                        await fs.promises.rename(DB_FILE, backupFile);
+                        activeMovedToBackup = true;
+                    }
+
                     await fs.promises.rename(tmpFile, DB_FILE);
                 } catch (error) {
-                    await fs.promises.rm(tmpFile, { force: true }).catch(() => undefined);
+                    await fs.promises.unlink(tmpFile).catch(() => undefined);
+                    if (activeMovedToBackup && !fs.existsSync(DB_FILE) && fs.existsSync(backupFile)) {
+                        await fs.promises.rename(backupFile, DB_FILE).catch((restoreError) => {
+                            console.error('Database restore error:', restoreError);
+                        });
+                    }
                     console.error('Database save error:', error);
                     throw error;
                 }
@@ -287,31 +329,34 @@ class Database {
                 currentHashContent: data.currentHashContent,
                 updatedAt: data.updatedAt
             };
-            const currentHashFilter = initHashContent
-                ? { site: siteKey, currentHashContent: initHashContent }
-                : {
-                    site: siteKey,
-                    $or: [
-                        { currentHashContent: '' },
-                        { currentHashContent: null },
-                        { currentHashContent: { $exists: false } }
-                    ]
-                };
 
-            const updateResult = await collection.updateOne(currentHashFilter, { $set: document });
-            if (updateResult.matchedCount > 0) {
-                return true;
-            }
-
-            try {
-                await collection.insertOne(document);
-                return true;
-            } catch (error) {
-                if (error instanceof MongoServerError && error.code === 11000) {
-                    return false;
+            // If empty initHashContent, attempt fast insert first
+            if (!initHashContent) {
+                try {
+                    await collection.insertOne(document);
+                    return true;
+                } catch (error) {
+                    if (error instanceof MongoServerError && error.code === 11000) {
+                        const updateResult = await collection.updateOne(
+                            {
+                                site: siteKey,
+                                $or: [
+                                    { currentHashContent: '' },
+                                    { currentHashContent: null },
+                                    { currentHashContent: { $exists: false } }
+                                ]
+                            },
+                            { $set: document }
+                        );
+                        return updateResult.matchedCount > 0;
+                    }
+                    throw error;
                 }
-                throw error;
             }
+
+            const currentHashFilter = { site: siteKey, currentHashContent: initHashContent };
+            const updateResult = await collection.updateOne(currentHashFilter, { $set: document });
+            return updateResult.matchedCount > 0;
         }
 
         return this.runFileMutation(async () => {
@@ -392,6 +437,7 @@ async function initializeDatabase(): Promise<void> {
     }
 }
 
+app.use(compression());
 app.use(express.json({ limit: MAX_CONTENT_SIZE }));
 
 if (NODE_ENV === 'production') {
@@ -407,9 +453,19 @@ if (NODE_ENV === 'production') {
 
 for (const [route, fileName] of STATIC_ASSETS) {
     app.get(route, (_req: Request, res: Response) => {
-        res.sendFile(STATIC_ASSET_FILES.get(route) || resolveRuntimeFile(fileName));
+        const filePath = STATIC_ASSET_FILES.get(route) || resolveRuntimeFile(fileName);
+        setStaticCacheHeaders(res, filePath);
+        res.sendFile(filePath);
     });
 }
+
+app.get(/^\/(?:app|styles)\.[a-f0-9]{8}\.(?:js|css)$/i, (req: Request, res: Response, next: NextFunction) => {
+    const filePath = resolveRuntimeFile(path.basename(req.path));
+    setStaticCacheHeaders(res, filePath);
+    res.sendFile(filePath, (error) => {
+        if (error) next();
+    });
+});
 
 app.use('/api', async (_req: Request, _res: Response, next: NextFunction) => {
     try {
@@ -425,6 +481,7 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 app.get('/', (_req: Request, res: Response) => {
+    setStaticCacheHeaders(res, INDEX_FILE);
     res.sendFile(INDEX_FILE);
 });
 
@@ -434,6 +491,7 @@ app.get('/:site', (req: Request, res: Response, next: NextFunction) => {
         return next();
     }
 
+    setStaticCacheHeaders(res, INDEX_FILE);
     res.sendFile(INDEX_FILE);
 });
 

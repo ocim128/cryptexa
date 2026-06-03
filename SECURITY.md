@@ -23,6 +23,7 @@ Cryptexa is designed with security as a primary concern. This document outlines 
 - **No password storage**: Passwords never leave the client
 - **Concurrent modification protection**: Hash-based conflict detection
 - **Secure deletion**: Proper data removal on delete operations
+- **Cache Safety Policy**: To prevent session/concurrency leaks, all API responses (`/api/*`) are configured with `Cache-Control: no-store` to prevent caching at the browser, proxy, or CDN level. Static assets (JS/CSS/images) may be cached using content-hashed versioning.
 
 ## Security Best Practices
 

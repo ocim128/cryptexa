@@ -10,11 +10,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const nodeCrypto = require('crypto');
 
 const BUILD_DIR = 'dist';
 const PUBLIC_DIR = 'public';
-const PUBLIC_STATIC_FILES = ['styles.css', 'icon.png', 'favicon-32.png', 'favicon-16.png', 'apple-touch-icon.png'];
-const OBSOLETE_PUBLIC_FILES = ['kinetic.css'];
+const PUBLIC_STATIC_FILES = ['favicon-32.png', 'favicon-16.png', 'apple-touch-icon.png'];
+const OBSOLETE_PUBLIC_FILES = ['kinetic.css', 'icon.png'];
 const COPY_FILES = ['README.md', 'DEPLOYMENT.md', '.env.example', 'ecosystem.config.js', 'Dockerfile', '.dockerignore', 'vercel.json'];
 const SRC_DIR = 'src';
 
@@ -55,6 +56,22 @@ function removeFileFromTargets(relativePath, targets) {
     if (fs.existsSync(filePath)) {
       fs.rmSync(filePath, { force: true });
       console.log(`Removed obsolete ${filePath}`);
+    }
+  }
+}
+
+function removeMatchingFilesFromTargets(pattern, targets) {
+  for (const targetDir of targets) {
+    if (!fs.existsSync(targetDir)) {
+      continue;
+    }
+
+    for (const fileName of fs.readdirSync(targetDir)) {
+      if (!pattern.test(fileName)) {
+        continue;
+      }
+      fs.rmSync(path.join(targetDir, fileName), { force: true });
+      console.log(`Removed stale generated asset ${path.join(targetDir, fileName)}`);
     }
   }
 }
@@ -112,20 +129,32 @@ ensureDir(PUBLIC_DIR);
 for (const file of OBSOLETE_PUBLIC_FILES) {
   removeFileFromTargets(file, [PUBLIC_DIR, BUILD_DIR]);
 }
+removeMatchingFilesFromTargets(/^(?:app\.[a-f0-9]{8}\.js|styles\.[a-f0-9]{8}\.css)$/i, [PUBLIC_DIR, BUILD_DIR]);
+
+function getHash(content) {
+  return nodeCrypto.createHash('sha256').update(content).digest('hex').substring(0, 8);
+}
 
 const clientBundle = buildClientBundle();
+const appHash = getHash(clientBundle);
+const appHashedName = `app.${appHash}.js`;
 writeFileToTargets('app.js', clientBundle, [BUILD_DIR, PUBLIC_DIR]);
-console.log('Wrote browser bundle to dist/app.js and public/app.js');
+writeFileToTargets(appHashedName, clientBundle, [BUILD_DIR, PUBLIC_DIR]);
+console.log(`Wrote browser bundle to app.js and ${appHashedName}`);
 
 copyFileToTargets('index.html', [BUILD_DIR, PUBLIC_DIR]);
 for (const file of PUBLIC_STATIC_FILES) {
   copyFileToTargets(file, [BUILD_DIR, PUBLIC_DIR]);
 }
 
+let cssHashedName = 'styles.css';
 if (fs.existsSync('styles.css')) {
   const css = minifyCss(fs.readFileSync('styles.css', 'utf8'));
+  const cssHash = getHash(css);
+  cssHashedName = `styles.${cssHash}.css`;
   writeFileToTargets('styles.css', css, [BUILD_DIR, PUBLIC_DIR]);
-  console.log('Minified styles.css for dist/ and public/');
+  writeFileToTargets(cssHashedName, css, [BUILD_DIR, PUBLIC_DIR]);
+  console.log(`Minified styles.css to styles.css and ${cssHashedName}`);
 }
 
 if (esbuild && fs.existsSync('server-app.ts')) {
@@ -142,19 +171,29 @@ if (esbuild && fs.existsSync('server-app.ts')) {
   console.log('Compiled dist/server.js');
 }
 
-const indexHtmlPath = path.join(BUILD_DIR, 'index.html');
-if (fs.existsSync(indexHtmlPath)) {
-  let html = fs.readFileSync(indexHtmlPath, 'utf8');
-  html = html.replace(
-    /<script type="module" src="\.\/src\/app\.js"><\/script>/,
-    '<script src="./app.js"></script>'
-  );
-  html = html.replace(
-    /<script src="\.\/app\.js"><\/script>/,
-    '<script src="./app.js"></script>'
-  );
-  fs.writeFileSync(indexHtmlPath, html);
-  console.log('Patched dist/index.html');
+const indexHtmlPaths = [
+  path.join(BUILD_DIR, 'index.html'),
+  path.join(PUBLIC_DIR, 'index.html')
+];
+
+for (const indexHtmlPath of indexHtmlPaths) {
+  if (fs.existsSync(indexHtmlPath)) {
+    let html = fs.readFileSync(indexHtmlPath, 'utf8');
+    html = html.replace(
+      /<script type="module" src="\.\/src\/app\.js"><\/script>/,
+      `<script src="./${appHashedName}"></script>`
+    );
+    html = html.replace(
+      /<script src="\.\/app\.js"><\/script>/,
+      `<script src="./${appHashedName}"></script>`
+    );
+    html = html.replace(
+      /<link rel="stylesheet" href="\.\/styles\.css" \/>/,
+      `<link rel="stylesheet" href="./${cssHashedName}" />`
+    );
+    fs.writeFileSync(indexHtmlPath, html);
+    console.log(`Patched ${indexHtmlPath} with hashed assets.`);
+  }
 }
 
 for (const file of COPY_FILES) {

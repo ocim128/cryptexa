@@ -31,6 +31,12 @@ describe('hex conversion utilities', () => {
             expect(Array.from(new Uint8Array(hexToBuf('abcdef')))).toEqual([171, 205, 239]);
             expect(Array.from(new Uint8Array(hexToBuf('ABCDEF')))).toEqual([171, 205, 239]);
         });
+
+        it('handles malformed or odd hex input characters by falling back gracefully', () => {
+            expect(Array.from(new Uint8Array(hexToBuf('zz')))).toEqual([0]);
+            expect(Array.from(new Uint8Array(hexToBuf('a[')))).toEqual([10]);
+            expect(Array.from(new Uint8Array(hexToBuf('123')))).toEqual([18]); // odd length ignores last partial byte or parses it
+        });
     });
 
     it('roundtrips buffer -> hex -> buffer', () => {

@@ -1,17 +1,17 @@
 "use strict";
 (() => {
   // src/utils/fetch.ts
-  async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+  async function fetchWithRetry(url, options = {}, maxRetries = 3, timeoutMs = 6e4) {
     let lastError = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      let timeoutId;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6e4);
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         const response = await fetch(url, {
           ...options,
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         return response;
       } catch (error) {
         lastError = error;
@@ -20,6 +20,10 @@
         }
         const delay = Math.pow(2, attempt) * 1e3;
         await new Promise((resolve) => setTimeout(resolve, delay));
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
     }
     throw lastError;
@@ -94,6 +98,75 @@
   var hideHint = (sel) => {
     qs(sel)?.classList.add("hidden");
   };
+
+  // src/utils/url.ts
+  function getUrl(href) {
+    return new URL(href, "http://localhost");
+  }
+  function decodePathSegment(segment) {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+  function getQueryParamFromUrl(href, name) {
+    const url = getUrl(href);
+    const value = url.searchParams.get(name);
+    return value && value.trim().length ? value.trim() : null;
+  }
+  function getSiteFromUrl(href) {
+    const url = getUrl(href);
+    const segment = url.pathname.replace(/^\/+|\/+$/g, "");
+    if (segment && segment !== "api") return decodePathSegment(segment);
+    return getQueryParamFromUrl(href, "site");
+  }
+  function getUrlPasswordFromUrl(href) {
+    const url = getUrl(href);
+    const hash = url.hash.startsWith("#") ? url.hash.substring(1) : url.hash;
+    const hashParams = new URLSearchParams(hash);
+    const hashPassword = hashParams.get("password");
+    const queryPassword = url.searchParams.get("password");
+    const rawQueryPassword = url.search.startsWith("?") && url.search.length > 1 && !url.search.includes("=") ? decodeURIComponent(url.search.substring(1)) : null;
+    const password = hashPassword || queryPassword || rawQueryPassword;
+    return {
+      password: password && password.trim().length ? password.trim() : null,
+      shouldScrub: Boolean(hashPassword || queryPassword || rawQueryPassword)
+    };
+  }
+  function removeUrlPassword(href) {
+    const url = getUrl(href);
+    if (url.search.startsWith("?") && url.search.length > 1 && !url.search.includes("=")) {
+      url.search = "";
+    } else {
+      url.searchParams.delete("password");
+    }
+    if (url.hash) {
+      const hash = url.hash.substring(1);
+      const hashParams = new URLSearchParams(hash);
+      if (hashParams.has("password")) {
+        hashParams.delete("password");
+        const nextHash = hashParams.toString();
+        url.hash = nextHash ? `#${nextHash}` : "";
+      }
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  // src/utils/workspace.ts
+  var WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
+  var RESERVED_WORKSPACE_IDS = /* @__PURE__ */ new Set(["api"]);
+  var WORKSPACE_ID_REQUIREMENTS = "Use 1-128 characters: letters, numbers, dots, dashes, underscores, or tildes.";
+  function normalizeWorkspaceId(input) {
+    if (typeof input !== "string" && typeof input !== "number") {
+      return null;
+    }
+    const value = String(input).trim();
+    if (!value || RESERVED_WORKSPACE_IDS.has(value.toLowerCase())) {
+      return null;
+    }
+    return WORKSPACE_ID_PATTERN.test(value) ? value : null;
+  }
 
   // src/ui/toast.ts
   var TOAST_ICONS = {
@@ -327,7 +400,8 @@
     }
   }
   function initTheme() {
-    const initial = getStored() || "light";
+    const stored = getStored();
+    const initial = stored === "dark" || stored === "light" ? stored : getSystemPref();
     applyTheme(initial);
   }
   function wireThemeToggle() {
@@ -354,6 +428,15 @@
   // src/utils/crypto-helpers.ts
   var textEncoder = new TextEncoder();
   var textDecoder = new TextDecoder();
+  var hexTable = new Array(256);
+  for (let i = 0; i < 256; i++) {
+    hexTable[i] = i.toString(16).padStart(2, "0");
+  }
+  var hexValueTable = {};
+  for (let i = 0; i < 16; i++) {
+    hexValueTable[i.toString(16)] = i;
+    hexValueTable[i.toString(16).toUpperCase()] = i;
+  }
   async function sha512Hex(input) {
     const data = typeof input === "string" ? textEncoder.encode(input) : input;
     const buf = await crypto.subtle.digest("SHA-512", data);
@@ -364,15 +447,26 @@
     let s = "";
     for (let i = 0; i < arr.length; i++) {
       const byte = arr[i];
-      s += byte !== void 0 ? byte.toString(16).padStart(2, "0") : "";
+      if (byte !== void 0) {
+        s += hexTable[byte];
+      }
     }
     return s;
   }
   function hexToBuf(hex) {
-    const len = hex.length / 2;
+    const len = Math.floor(hex.length / 2);
     const out = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
-      out[i] = parseInt(hex.substr(i * 2, 2), 16);
+      const highChar = hex[i * 2];
+      const lowChar = hex[i * 2 + 1];
+      const high = highChar !== void 0 ? hexValueTable[highChar] : void 0;
+      const low = lowChar !== void 0 ? hexValueTable[lowChar] : void 0;
+      if (high !== void 0 && low !== void 0) {
+        out[i] = high << 4 | low;
+      } else {
+        const parsed = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        out[i] = isNaN(parsed) ? 0 : parsed;
+      }
     }
     return out.buffer;
   }
@@ -407,6 +501,9 @@
   var TAB_COLOR_METADATA_PREFIX = "__CRYPTEXA_COLOR__:";
   var DEFAULT_TAB_MARK_COLOR = "#d15f38";
   var MOBILE_METADATA_HINT = "Reload this website to hide mobile app metadata!";
+  var editorMetricsCache = /* @__PURE__ */ new WeakMap();
+  var editorOverlayCache = /* @__PURE__ */ new WeakMap();
+  var textareaStyleCache = /* @__PURE__ */ new WeakMap();
   function getCurrentTabTitle() {
     return currentTabTitle;
   }
@@ -469,60 +566,123 @@
   }
   function updateGutterForTextarea(ta, gutter) {
     if (!ta || !gutter) return;
-    const value = ta.value || "";
-    const base = value.split("\n").length;
-    const count = Math.max(1, base + (value.endsWith("\n") ? 1 : 0));
-    let out = "1";
-    for (let i = 2; i <= count; i++) out += "\n" + i;
-    gutter.setAttribute("data-lines", out);
+    const metrics = getEditorMetrics(ta);
+    if (gutter.getAttribute("data-lines") !== metrics.gutterLines) {
+      gutter.setAttribute("data-lines", metrics.gutterLines);
+    }
     const y = Math.round(ta.scrollTop || 0);
     gutter.style.setProperty("--gutter-scroll-y", String(-y));
     gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
     gutter.style.removeProperty("top");
     gutter.style.transform = "translateZ(0)";
   }
-  function getLineNumberFromPosition(text, position) {
+  function getEditorMetrics(ta) {
+    const value = ta.value || "";
+    const cached = editorMetricsCache.get(ta);
+    if (cached?.value === value) {
+      return cached;
+    }
+    const lineStarts = [0];
+    let newlineCount = 0;
+    for (let index = 0; index < value.length; index++) {
+      if (value.charCodeAt(index) === 10) {
+        newlineCount++;
+        lineStarts.push(index + 1);
+      }
+    }
+    const lineCount = Math.max(1, newlineCount + 1);
+    const gutterParts = new Array(lineCount);
+    for (let index = 0; index < lineCount; index++) {
+      gutterParts[index] = String(index + 1);
+    }
+    const metrics = {
+      value,
+      newlineCount,
+      lineStarts,
+      gutterLines: gutterParts.join("\n")
+    };
+    editorMetricsCache.set(ta, metrics);
+    return metrics;
+  }
+  function getLineNumberFromPositionInTextarea(ta, position) {
     if (position < 0) return 1;
-    const textUpToPosition = text.substring(0, position);
-    return textUpToPosition.split("\n").length;
+    const { lineStarts } = getEditorMetrics(ta);
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+      const mid = low + high >> 1;
+      if ((lineStarts[mid] ?? Number.MAX_SAFE_INTEGER) <= position) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return high + 1;
   }
-  function getLineHeight(ta) {
-    const computedStyle = window.getComputedStyle(ta);
-    return parseInt(computedStyle.lineHeight) || parseInt(computedStyle.fontSize) * 1.2;
-  }
-  function updateActiveLineHighlight(ta, editorWrap) {
-    const existingHighlights = editorWrap.querySelectorAll(".active-line");
-    existingHighlights.forEach((el) => el.remove());
-    const cursorPos = ta.selectionStart;
-    const text = ta.value;
-    const lineNumber = getLineNumberFromPosition(text, cursorPos);
-    const highlight = document.createElement("div");
-    highlight.className = "active-line";
-    const lineHeight = getLineHeight(ta);
-    const top = (lineNumber - 1) * lineHeight + parseInt(window.getComputedStyle(ta).paddingTop);
-    highlight.style.top = `${top}px`;
-    highlight.style.height = `${lineHeight}px`;
-    editorWrap.appendChild(highlight);
-  }
-  function updateSelectedLinesHighlight(ta, editorWrap) {
-    const existingHighlights = editorWrap.querySelectorAll(".selected-line");
-    existingHighlights.forEach((el) => el.remove());
+  function getSelectionLineRange(ta) {
     const selectionStart = ta.selectionStart;
     const selectionEnd = ta.selectionEnd;
-    if (selectionStart === selectionEnd) return;
-    const text = ta.value;
-    const startLine = getLineNumberFromPosition(text, selectionStart);
-    const endLine = getLineNumberFromPosition(text, selectionEnd);
-    const lineHeight = getLineHeight(ta);
-    const paddingTop = parseInt(window.getComputedStyle(ta).paddingTop);
-    for (let i = startLine; i <= endLine; i++) {
-      const highlight = document.createElement("div");
-      highlight.className = "selected-line";
-      const top = (i - 1) * lineHeight + paddingTop;
-      highlight.style.top = `${top}px`;
-      highlight.style.height = `${lineHeight}px`;
-      editorWrap.appendChild(highlight);
+    if (selectionStart === selectionEnd) return null;
+    return {
+      startLine: getLineNumberFromPositionInTextarea(ta, selectionStart),
+      endLine: getLineNumberFromPositionInTextarea(ta, selectionEnd)
+    };
+  }
+  function getEditorOverlayState(editorWrap) {
+    const cached = editorOverlayCache.get(editorWrap);
+    if (cached) {
+      return cached;
     }
+    const activeLine = document.createElement("div");
+    activeLine.className = "active-line";
+    activeLine.hidden = true;
+    const selectionBlock = document.createElement("div");
+    selectionBlock.className = "selected-line";
+    selectionBlock.hidden = true;
+    editorWrap.appendChild(activeLine);
+    editorWrap.appendChild(selectionBlock);
+    const state2 = { activeLine, selectionBlock };
+    editorOverlayCache.set(editorWrap, state2);
+    return state2;
+  }
+  function getTextareaStyleMetrics(ta) {
+    const cached = textareaStyleCache.get(ta);
+    if (cached) {
+      return cached;
+    }
+    const computedStyle = window.getComputedStyle(ta);
+    const metrics = {
+      lineHeight: parseInt(computedStyle.lineHeight) || parseInt(computedStyle.fontSize) * 1.2,
+      paddingTop: parseInt(computedStyle.paddingTop) || 0
+    };
+    textareaStyleCache.set(ta, metrics);
+    return metrics;
+  }
+  function getLineHeight(ta) {
+    return getTextareaStyleMetrics(ta).lineHeight;
+  }
+  function updateActiveLineHighlight(ta, editorWrap) {
+    const { activeLine } = getEditorOverlayState(editorWrap);
+    const lineNumber = getLineNumberFromPositionInTextarea(ta, ta.selectionStart);
+    const { lineHeight, paddingTop } = getTextareaStyleMetrics(ta);
+    const top = (lineNumber - 1) * lineHeight + paddingTop;
+    activeLine.hidden = false;
+    activeLine.style.top = `${top}px`;
+    activeLine.style.height = `${lineHeight}px`;
+  }
+  function updateSelectedLinesHighlight(ta, editorWrap) {
+    const { selectionBlock } = getEditorOverlayState(editorWrap);
+    const range = getSelectionLineRange(ta);
+    if (!range) {
+      selectionBlock.hidden = true;
+      return;
+    }
+    const { lineHeight, paddingTop } = getTextareaStyleMetrics(ta);
+    const top = (range.startLine - 1) * lineHeight + paddingTop;
+    const height = (range.endLine - range.startLine + 1) * lineHeight;
+    selectionBlock.hidden = false;
+    selectionBlock.style.top = `${top}px`;
+    selectionBlock.style.height = `${height}px`;
   }
   function getTabButton(header) {
     return header.querySelector('[role="tab"]');
@@ -560,11 +720,6 @@
     gutter.style.setProperty("--gutter-before-transform", `translateY(${-y}px)`);
     gutter.style.removeProperty("top");
     gutter.style.transform = "translateZ(0)";
-    const needsHeavyUpdate = ta.value.length > 5e4;
-    if (needsHeavyUpdate) {
-      setTimeout(() => updateGutterForTextarea(ta, gutter), 0);
-      return;
-    }
     updateGutterForTextarea(ta, gutter);
   }
   function getTitleFromContent(content) {
@@ -648,14 +803,6 @@
     } else {
       a.textContent = getTitleFromContent("");
     }
-    let rafId = 0;
-    ta.addEventListener("input", () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        updateGutter();
-      });
-    });
     let lastScrollTs = 0;
     ta.addEventListener("scroll", () => {
       const now = performance.now ? performance.now() : Date.now();
@@ -689,19 +836,20 @@
     }
     return li;
   }
-  function refreshTabs() {
-    const headers = qsa(".tab-header");
-    headers.forEach((h) => {
+  function refreshTabs(headers = null) {
+    const resolvedHeaders = headers || qsa(".tab-header");
+    resolvedHeaders.forEach((h) => {
       const closer = h.querySelector(".close");
       if (!closer) return;
-      const shouldShow = headers.length > 1 && !h.classList.contains("pinned");
+      const shouldShow = resolvedHeaders.length > 1 && !h.classList.contains("pinned");
       closer.style.display = shouldShow ? "" : "none";
     });
     syncTabColorControls();
-    focusActiveTextarea();
   }
   function getDragAfterElement(container, x) {
-    const draggableElements = [...container.querySelectorAll(".tab-header:not([style*='opacity'])")];
+    const draggableElements = Array.from(container.children).filter((child) => {
+      return child instanceof HTMLElement && child.classList.contains("tab-header") && child.style.opacity !== "0.5";
+    });
     return draggableElements.reduce((closest, child) => {
       const box = child.getBoundingClientRect();
       const offset = x - box.left - box.width / 2;
@@ -743,13 +891,12 @@
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = "move";
       }
+      if (!draggedTab) return;
       const afterElement = getDragAfterElement(container, event.clientX);
-      const dragging = qs(".tab-header[style*='opacity']");
-      if (!dragging) return;
       if (afterElement == null) {
-        container.appendChild(dragging);
+        container.appendChild(draggedTab);
       } else {
-        container.insertBefore(dragging, afterElement);
+        container.insertBefore(draggedTab, afterElement);
       }
     });
     container.addEventListener("drop", (e) => {
@@ -926,15 +1073,27 @@
   }
 
   // src/ui/search.ts
+  var MAX_SEARCH_SCAN_MATCHES = 500;
   var searchState = {
     isOpen: false,
     query: "",
     results: [],
-    selectedIndex: -1
+    selectedIndex: -1,
+    totalMatches: 0,
+    visibleMatches: 0,
+    hitLimit: false,
+    hasApproximateTotal: false
   };
   var searchDialog = null;
   var searchInput = null;
   var resultsContainer = null;
+  var searchIndex = /* @__PURE__ */ new Map();
+  var indexedTabIds = [];
+  var pendingSearchIndexRefresh = /* @__PURE__ */ new Set();
+  var MIN_SEARCH_QUERY_LENGTH = 2;
+  var MAX_SEARCH_RESULTS = 200;
+  var SEARCH_INPUT_DEBOUNCE_MS = 60;
+  var searchInputTimer = null;
   function escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
@@ -947,76 +1106,180 @@
     const tail = after.length > maxLen / 2 ? `${after.substring(0, maxLen / 2)}...` : after;
     return `${head}<mark>${match}</mark>${tail}`;
   }
-  function searchAllTabs(query) {
-    if (!query || query.length < 2) return [];
-    const lowerQuery = query.toLowerCase();
-    const results = [];
-    for (const header of qsa(".tab-header")) {
-      const tabId = header.dataset.tabId;
-      if (!tabId) continue;
-      const tabTitle = header.querySelector(".tab-title")?.textContent || "Untitled";
-      const textarea = qs(`#${tabId} .textarea-contents`);
-      if (!textarea) continue;
-      const lines = textarea.value.split("\n");
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-        if (!line) continue;
-        const lowerLine = line.toLowerCase();
-        let matchIndex = lowerLine.indexOf(lowerQuery);
-        while (matchIndex !== -1) {
-          results.push({
-            tabId,
-            tabTitle,
-            lineNumber: lineIndex + 1,
-            lineContent: line,
-            matchStart: matchIndex,
-            matchEnd: matchIndex + query.length
-          });
-          matchIndex = lowerLine.indexOf(lowerQuery, matchIndex + 1);
-        }
+  function buildLineStarts(content) {
+    const starts = [0];
+    for (let index = 0; index < content.length; index++) {
+      if (content.charCodeAt(index) === 10) {
+        starts.push(index + 1);
       }
     }
+    return starts;
+  }
+  function findLineIndex(lineStarts, position) {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+      const mid = low + high >> 1;
+      if ((lineStarts[mid] ?? Number.MAX_SAFE_INTEGER) <= position) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return Math.max(0, high);
+  }
+  function getLineText(content, lineStarts, lineIndex) {
+    const start = lineStarts[lineIndex] ?? 0;
+    const nextStart = lineStarts[lineIndex + 1] ?? content.length;
+    const end = nextStart > start ? nextStart - 1 : content.length;
+    return content.slice(start, end);
+  }
+  function cacheTabEntry(header) {
+    const tabId = header.dataset.tabId;
+    if (!tabId) return null;
+    const tabTitle = header.querySelector(".tab-title")?.textContent || "Untitled";
+    const textarea = qs(`#${tabId} .textarea-contents`);
+    if (!textarea) {
+      searchIndex.delete(tabId);
+      pendingSearchIndexRefresh.delete(tabId);
+      return null;
+    }
+    const content = textarea.value || "";
+    const cached = searchIndex.get(tabId);
+    if (cached && cached.content === content && cached.tabTitle === tabTitle) {
+      pendingSearchIndexRefresh.delete(tabId);
+      return cached;
+    }
+    const entry = {
+      tabId,
+      tabTitle,
+      content,
+      lowerContent: content.toLowerCase(),
+      lineStarts: buildLineStarts(content)
+    };
+    searchIndex.set(tabId, entry);
+    pendingSearchIndexRefresh.delete(tabId);
+    return entry;
+  }
+  function markTabSearchEntryDirty(tabId) {
+    if (!tabId) return;
+    pendingSearchIndexRefresh.add(tabId);
+  }
+  function syncSearchIndex() {
+    const headers = qsa(".tab-header");
+    const nextTabIds = headers.map((header) => header.dataset.tabId).filter((tabId) => Boolean(tabId));
+    for (const tabId of indexedTabIds) {
+      if (!nextTabIds.includes(tabId)) {
+        searchIndex.delete(tabId);
+        pendingSearchIndexRefresh.delete(tabId);
+      }
+    }
+    indexedTabIds = nextTabIds;
+    Array.from(pendingSearchIndexRefresh).forEach((tabId) => {
+      const header = qs(`.tab-header[data-tab-id="${tabId}"]`);
+      if (!header) {
+        searchIndex.delete(tabId);
+        pendingSearchIndexRefresh.delete(tabId);
+        return;
+      }
+      cacheTabEntry(header);
+    });
+    return indexedTabIds.map((tabId) => searchIndex.get(tabId) || cacheTabEntry(qs(`.tab-header[data-tab-id="${tabId}"]`))).filter((entry) => Boolean(entry));
+  }
+  function getSearchMessage() {
+    if (searchState.results.length > 0) return "";
+    if (searchState.query.length >= 2) {
+      return `No matches for "${escapeHtml(searchState.query)}".`;
+    }
+    if (searchState.query.length > 0) {
+      return "Type at least 2 characters to search.";
+    }
+    return "Search across all open tabs.";
+  }
+  function updateSelectedResult() {
+    if (!resultsContainer) return;
+    const selected = resultsContainer.querySelector(".search-result.selected");
+    if (selected) {
+      selected.classList.remove("selected");
+    }
+    if (searchState.selectedIndex < 0) return;
+    resultsContainer.querySelector(`.search-result[data-index="${searchState.selectedIndex}"]`)?.classList.add("selected");
+  }
+  function searchAllTabs(query) {
+    if (!query || query.length < MIN_SEARCH_QUERY_LENGTH) {
+      searchState.totalMatches = 0;
+      searchState.visibleMatches = 0;
+      searchState.hitLimit = false;
+      searchState.hasApproximateTotal = false;
+      return [];
+    }
+    const lowerQuery = query.toLowerCase();
+    const results = [];
+    let totalMatches = 0;
+    let hasApproximateTotal = false;
+    for (const entry of syncSearchIndex()) {
+      let matchIndex = entry.lowerContent.indexOf(lowerQuery);
+      while (matchIndex !== -1) {
+        totalMatches++;
+        if (results.length < MAX_SEARCH_RESULTS) {
+          const lineIndex = findLineIndex(entry.lineStarts, matchIndex);
+          const lineContent = getLineText(entry.content, entry.lineStarts, lineIndex);
+          const lineStart = entry.lineStarts[lineIndex] ?? 0;
+          const matchStart = matchIndex - lineStart;
+          results.push({
+            tabId: entry.tabId,
+            tabTitle: entry.tabTitle,
+            lineNumber: lineIndex + 1,
+            lineContent,
+            matchStart,
+            matchEnd: matchStart + query.length
+          });
+        }
+        if (totalMatches >= MAX_SEARCH_SCAN_MATCHES) {
+          hasApproximateTotal = true;
+          matchIndex = -1;
+          break;
+        }
+        matchIndex = entry.lowerContent.indexOf(lowerQuery, matchIndex + 1);
+      }
+      if (hasApproximateTotal) {
+        break;
+      }
+    }
+    searchState.totalMatches = totalMatches;
+    searchState.visibleMatches = results.length;
+    searchState.hitLimit = totalMatches > results.length || hasApproximateTotal;
+    searchState.hasApproximateTotal = hasApproximateTotal;
     return results;
   }
   function renderResults() {
     if (!resultsContainer) return;
     if (searchState.results.length === 0) {
-      if (searchState.query.length >= 2) {
-        resultsContainer.innerHTML = `
-                <div class="search-no-results">
-                    <span>No matches for "${escapeHtml(searchState.query)}".</span>
-                </div>
-            `;
-        return;
-      }
-      if (searchState.query.length > 0) {
-        resultsContainer.innerHTML = `
-                <div class="search-hint">Type at least 2 characters to search.</div>
-            `;
-        return;
-      }
-      resultsContainer.innerHTML = `
-            <div class="search-hint">Search across all open tabs.</div>
-        `;
+      const emptyClass = searchState.query.length >= MIN_SEARCH_QUERY_LENGTH ? "search-hint search-no-results" : "search-hint";
+      resultsContainer.innerHTML = `<div class="${emptyClass}">${getSearchMessage()}</div>`;
       return;
     }
-    resultsContainer.innerHTML = `
+    const resultTotal = searchState.hasApproximateTotal ? `${searchState.totalMatches}+` : String(searchState.totalMatches);
+    const resultCountLabel = `${resultTotal} result${searchState.totalMatches === 1 && !searchState.hasApproximateTotal ? "" : "s"}`;
+    const limitNotice = searchState.hitLimit ? `<span class="search-results-limit">Showing first ${searchState.visibleMatches}</span>` : "";
+    const headerHtml = `
         <div class="search-results-header">
-            ${searchState.results.length} result${searchState.results.length === 1 ? "" : "s"}
+            ${resultCountLabel}${limitNotice ? ` ${limitNotice}` : ""}
         </div>
-        ${searchState.results.map((result, index) => `
-            <div class="search-result${index === searchState.selectedIndex ? " selected" : ""}"
-                 data-index="${index}"
-                 data-tab-id="${result.tabId}"
-                 data-line="${result.lineNumber}">
-                <div class="search-result-header">
-                    <span class="search-result-tab">${escapeHtml(result.tabTitle)}</span>
-                    <span class="search-result-line">Line ${result.lineNumber}</span>
-                </div>
-                <div class="search-result-content">${highlightMatch(result)}</div>
-            </div>
-        `).join("")}
     `;
+    const resultsHtml = searchState.results.map((result, index) => `
+        <div class="search-result${index === searchState.selectedIndex ? " selected" : ""}"
+             data-index="${index}"
+             data-tab-id="${result.tabId}"
+             data-line="${result.lineNumber}">
+            <div class="search-result-header">
+                <span class="search-result-tab">${escapeHtml(result.tabTitle)}</span>
+                <span class="search-result-line">Line ${result.lineNumber}</span>
+            </div>
+            <div class="search-result-content">${highlightMatch(result)}</div>
+        </div>
+    `).join("");
+    resultsContainer.innerHTML = `${headerHtml}${resultsHtml}`;
   }
   function scrollSelectedIntoView() {
     resultsContainer?.querySelector(".search-result.selected")?.scrollIntoView({
@@ -1024,12 +1287,28 @@
       behavior: "smooth"
     });
   }
-  function handleSearchInput() {
-    if (!searchInput) return;
-    searchState.query = searchInput.value;
-    searchState.results = searchAllTabs(searchState.query);
+  function runSearch(query) {
+    searchState.query = query;
+    searchState.results = searchAllTabs(query);
     searchState.selectedIndex = searchState.results.length > 0 ? 0 : -1;
     renderResults();
+  }
+  function handleSearchInput() {
+    if (!searchInput) return;
+    const nextQuery = searchInput.value;
+    if (searchInputTimer) {
+      clearTimeout(searchInputTimer);
+    }
+    searchInputTimer = setTimeout(() => {
+      searchInputTimer = null;
+      runSearch(nextQuery);
+    }, SEARCH_INPUT_DEBOUNCE_MS);
+  }
+  function flushPendingSearch() {
+    if (!searchInput || !searchInputTimer) return;
+    clearTimeout(searchInputTimer);
+    searchInputTimer = null;
+    runSearch(searchInput.value);
   }
   function goToResult(result) {
     const tabHeader = qs(`.tab-header[data-tab-id="${result.tabId}"]`);
@@ -1038,41 +1317,42 @@
       return;
     }
     activateTab(tabHeader);
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       const textarea = qs(`#${result.tabId} .textarea-contents`);
       if (!textarea) return;
-      const lines = textarea.value.split("\n");
-      let charPosition = 0;
-      for (let i = 0; i < result.lineNumber - 1; i++) {
-        charPosition += (lines[i]?.length || 0) + 1;
-      }
-      charPosition += result.matchStart;
+      const content = textarea.value || "";
+      const lineStarts = buildLineStarts(content);
+      const lineStart = lineStarts[result.lineNumber - 1] ?? 0;
+      const charPosition = lineStart + result.matchStart;
       textarea.focus();
       textarea.setSelectionRange(charPosition, charPosition + (result.matchEnd - result.matchStart));
-      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight, 10) || 24;
+      const lineHeight = getLineHeight(textarea) || 24;
       textarea.scrollTop = Math.max(0, (result.lineNumber - 5) * lineHeight);
-    }, 100);
+    });
     closeSearch();
   }
   function handleSearchKeydown(event) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      flushPendingSearch();
       if (searchState.results.length === 0) return;
       searchState.selectedIndex = Math.min(searchState.selectedIndex + 1, searchState.results.length - 1);
-      renderResults();
+      updateSelectedResult();
       scrollSelectedIntoView();
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      flushPendingSearch();
       if (searchState.results.length === 0) return;
       searchState.selectedIndex = Math.max(searchState.selectedIndex - 1, 0);
-      renderResults();
+      updateSelectedResult();
       scrollSelectedIntoView();
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
+      flushPendingSearch();
       const selected = searchState.results[searchState.selectedIndex];
       if (selected) {
         goToResult(selected);
@@ -1096,10 +1376,19 @@
   }
   function openSearch() {
     if (!searchDialog) initSearchDialog();
+    syncSearchIndex();
     searchState.isOpen = true;
     searchState.query = "";
     searchState.results = [];
     searchState.selectedIndex = -1;
+    searchState.totalMatches = 0;
+    searchState.visibleMatches = 0;
+    searchState.hitLimit = false;
+    searchState.hasApproximateTotal = false;
+    if (searchInputTimer) {
+      clearTimeout(searchInputTimer);
+      searchInputTimer = null;
+    }
     if (searchInput) {
       searchInput.value = "";
     }
@@ -1162,6 +1451,11 @@
   }
   function initGlobalSearch() {
     initSearchDialog();
+    indexedTabIds = qsa(".tab-header").map((header) => header.dataset.tabId).filter((tabId) => Boolean(tabId));
+    indexedTabIds.forEach((tabId) => pendingSearchIndexRefresh.add(tabId));
+  }
+  function markSearchIndexDirty(tabId) {
+    markTabSearchEntryDirty(tabId);
   }
 
   // src/ui/password-strength.ts
@@ -1399,11 +1693,13 @@
       const id = header.dataset.tabId || "";
       const title = header.querySelector(".tab-title")?.textContent || "Empty Tab";
       const textarea = id ? qs(`#${id} .textarea-contents`) : null;
+      const content = textarea?.value || "";
       return {
         header,
         id,
         title,
-        content: textarea?.value?.substring(0, 200) || "",
+        content,
+        preview: content ? `${content.substring(0, 96)}${content.length > 96 ? "..." : ""}` : "Empty",
         isPinned: header.classList.contains("pinned"),
         isModified: header.classList.contains("modified"),
         index
@@ -1514,7 +1810,8 @@
     const list = qs("#tab-switcher-list");
     const stat = qs("#tab-switcher-stat");
     if (!list) return;
-    let tabs = getAllTabs();
+    const allTabs = getAllTabs();
+    let tabs = allTabs;
     if (query.trim()) {
       tabs = tabs.map((tab) => ({
         ...tab,
@@ -1536,7 +1833,7 @@
                     ${tab.isModified ? '<span class="modified-dot" aria-label="Unsaved changes"></span>' : ""}
                 </div>
                 <div class="tab-switcher-item-preview">
-                    ${tab.content ? escapeHtml2(tab.content.substring(0, 96)) + (tab.content.length > 96 ? "..." : "") : "Empty"}
+                    ${escapeHtml2(tab.preview)}
                 </div>
             </div>
             <div class="tab-switcher-item-meta">
@@ -1550,9 +1847,8 @@
         </div>
     `).join("");
     if (stat) {
-      const totalTabs = getAllTabs().length;
       const pinnedCount = tabs.filter((tab) => tab.isPinned).length;
-      stat.textContent = `${tabs.length}/${totalTabs} tabs${pinnedCount ? `, ${pinnedCount} pinned` : ""}`;
+      stat.textContent = `${tabs.length}/${allTabs.length} tabs${pinnedCount ? `, ${pinnedCount} pinned` : ""}`;
     }
   }
   function openTabSwitcher() {
@@ -1805,7 +2101,7 @@
               currentHashContent: newHashContent,
               encryptedContent: eContentPayload
             })
-          });
+          }, 0, 3e4);
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}: ${res.statusText}`);
           }
@@ -1883,7 +2179,7 @@
               site: this.site,
               initHashContent: this.initHashContent || ""
             })
-          });
+          }, 0, 3e4);
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}: ${res.statusText}`);
           }
@@ -1944,7 +2240,10 @@
     }
     async reloadFromServer() {
       const url = `/api/json?site=${encodeURIComponent(this.site)}`;
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url, {}, 3, 15e3);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
       const data = await res.json();
       if (data.status !== "success") throw new Error("Server error");
       this.remote.isNew = !!data.isNew;
@@ -2027,32 +2326,34 @@
     { keys: "F1", description: "Open shortcuts help" },
     { keys: "Escape", description: "Close dialog or focus editor" }
   ];
-  function getQueryParam(name) {
-    const url = new URL(window.location.href);
-    const value = url.searchParams.get(name);
-    return value && value.trim().length ? value.trim() : null;
-  }
   function getSiteFromURL() {
-    const path = window.location.pathname || "/";
-    const segment = path.replace(/^\/+|\/+$/g, "");
-    if (segment && segment !== "api") return segment;
-    return getQueryParam("site");
+    return getSiteFromUrl(window.location.href);
   }
   var SITE_ID = getSiteFromURL();
-  var URL_PASSWORD = (() => {
-    const named = getQueryParam("password");
-    if (named) return named;
-    const query = window.location.search || "";
-    if (query.startsWith("?") && query.length > 1 && !query.includes("=")) {
-      return decodeURIComponent(query.substring(1));
-    }
-    return null;
-  })();
+  var URL_PASSWORD_RESULT = getUrlPasswordFromUrl(window.location.href);
+  var URL_PASSWORD = URL_PASSWORD_RESULT.password;
+  if (URL_PASSWORD_RESULT.shouldScrub) {
+    window.history.replaceState(window.history.state, "", removeUrlPassword(window.location.href));
+  }
   var state = null;
   var ignoreInputEvent = true;
   var healthCheckInterval = null;
   var landingInitialized = false;
   var workspaceEventsWired = false;
+  var highlightUpdateRaf = 0;
+  function scheduleEditorHighlightUpdate(textarea) {
+    if (highlightUpdateRaf) cancelAnimationFrame(highlightUpdateRaf);
+    highlightUpdateRaf = requestAnimationFrame(() => {
+      highlightUpdateRaf = 0;
+      const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
+      if (!editorWrap) return;
+      updateActiveLineHighlight(textarea, editorWrap);
+      updateSelectedLinesHighlight(textarea, editorWrap);
+    });
+  }
+  function scheduleNextFrame(callback) {
+    requestAnimationFrame(() => callback());
+  }
   function getState() {
     if (!state) {
       throw new Error("Workspace state is not initialized");
@@ -2107,12 +2408,11 @@
     siteContext.classList.remove("hidden");
   }
   function navigateToWorkspace(siteId) {
-    const password = getQueryParam("password");
-    let destination = `${window.location.origin}/${encodeURIComponent(siteId)}`;
-    if (password) {
-      destination += `?password=${encodeURIComponent(password)}`;
+    const destination = new URL(`/${encodeURIComponent(siteId)}`, window.location.origin);
+    if (URL_PASSWORD) {
+      destination.hash = `password=${encodeURIComponent(URL_PASSWORD)}`;
     }
-    window.location.href = destination;
+    window.location.href = destination.toString();
   }
   function initLanding() {
     if (landingInitialized) return;
@@ -2122,9 +2422,10 @@
     if (!form || !input) return;
     on(form, "submit", (event) => {
       event.preventDefault();
-      const nextSite = (input.value || "").trim();
+      const rawSite = input.value || "";
+      const nextSite = normalizeWorkspaceId(rawSite);
       if (!nextSite) {
-        toast("Enter a workspace id.", "warning", 1800);
+        toast(rawSite.trim() ? WORKSPACE_ID_REQUIREMENTS : "Enter a workspace id.", "warning", 2400);
         input.focus();
         return;
       }
@@ -2185,7 +2486,7 @@
   }
   async function checkServerHealth() {
     try {
-      const response = await fetch("/health", { method: "GET" });
+      const response = await fetchWithRetry("/health", { method: "GET" }, 1, 5e3);
       return response.ok;
     } catch {
       return false;
@@ -2420,6 +2721,7 @@ document.getElementById("dec").onclick=async()=>{
           if (!isHuge && start <= 201 && activeTabTitle) {
             activeTabTitle.textContent = getTitleFromContent(textarea.value.substring(0, 200));
           }
+          markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
         } catch {
         }
         const panel = textarea.closest(".tab-panel");
@@ -2442,8 +2744,7 @@ document.getElementById("dec").onclick=async()=>{
           }
         }
         if (editorWrap) {
-          updateActiveLineHighlight(textarea, editorWrap);
-          updateSelectedLinesHighlight(textarea, editorWrap);
+          scheduleEditorHighlightUpdate(textarea);
         }
       });
     });
@@ -2451,32 +2752,27 @@ document.getElementById("dec").onclick=async()=>{
       const textarea = document.activeElement;
       if (!(textarea instanceof HTMLTextAreaElement)) return;
       if (!textarea.classList.contains("textarea-contents")) return;
-      const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
-      if (!editorWrap) return;
-      updateActiveLineHighlight(textarea, editorWrap);
-      updateSelectedLinesHighlight(textarea, editorWrap);
+      scheduleEditorHighlightUpdate(textarea);
     });
     document.addEventListener("mouseup", (event) => {
       if (!(event.target instanceof HTMLTextAreaElement)) return;
       if (!event.target.classList.contains("textarea-contents")) return;
       const textarea = event.target;
-      const editorWrap = textarea.closest(".tab-panel")?.querySelector(".editor-wrap");
-      if (!editorWrap) return;
-      setTimeout(() => {
-        updateActiveLineHighlight(textarea, editorWrap);
-        updateSelectedLinesHighlight(textarea, editorWrap);
-      }, 0);
+      scheduleNextFrame(() => {
+        scheduleEditorHighlightUpdate(textarea);
+      });
     });
     document.addEventListener("paste", (event) => {
       if (!(event.target instanceof HTMLTextAreaElement)) return;
       if (!event.target.classList.contains("textarea-contents")) return;
+      const textarea = event.target;
       const activeTabTitle = getCurrentTabTitle();
-      setTimeout(() => {
-        const textarea = event.target;
+      scheduleNextFrame(() => {
         const isHuge = textarea.value.length > 5e4;
         if (!isHuge && activeTabTitle) {
           activeTabTitle.textContent = getTitleFromContent();
         }
+        markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
         const gutter = textarea.closest(".tab-panel")?.querySelector(".line-gutter") || null;
         if (!gutter) return;
         if (isHuge) {
@@ -2487,7 +2783,8 @@ document.getElementById("dec").onclick=async()=>{
         } else {
           updateGutterForTextarea(textarea, gutter);
         }
-      }, 50);
+        scheduleEditorHighlightUpdate(textarea);
+      });
     });
     document.addEventListener("keydown", (event) => {
       const textarea = document.activeElement;
@@ -2501,6 +2798,12 @@ document.getElementById("dec").onclick=async()=>{
       textarea.value = value.substring(0, start) + "    " + value.substring(end);
       textarea.selectionStart = textarea.selectionEnd = start + 4;
       getState().updateIsTextModified(true);
+      const wasIgnoringInputEvent = ignoreInputEvent;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      if (wasIgnoringInputEvent) {
+        markSearchIndexDirty(textarea.closest(".tab-panel")?.id);
+      }
+      scheduleEditorHighlightUpdate(textarea);
     });
   }
   async function initSite() {

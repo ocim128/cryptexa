@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ClientState } from '../../src/state/ClientState';
+import { ClientState, setTabFunctions } from '../../src/state/ClientState';
 import { getQueryParamFromUrl, getSiteFromUrl, getUrlPasswordFromUrl, removeUrlPassword } from '../../src/utils/url';
 
 describe('ClientState', () => {
@@ -11,6 +11,10 @@ describe('ClientState', () => {
 
     beforeEach(() => {
         state = new ClientState('test-site');
+        setTabFunctions({
+            getContentFromTabs: async () => 'test-content-from-tabs',
+            setContentOfTabs: async () => {}
+        });
     });
 
     describe('constructor and getters', () => {
@@ -88,6 +92,63 @@ describe('ClientState', () => {
 
             expect(state.initHashContent).toBeDefined();
             expect(state.initHashContent!.length).toBeGreaterThan(0);
+        });
+    });
+
+    describe('saveSite', () => {
+        beforeEach(() => {
+            vi.mocked(globalThis.fetch).mockReset();
+        });
+
+        it('sends initHashContent on save', async () => {
+            state.initHashContent = 'oldhash123';
+            state.password = 'mypassword';
+
+            vi.mocked(globalThis.fetch).mockResolvedValue({
+                ok: true,
+                json: async () => ({ status: 'success', currentHashContent: 'newhash456' })
+            } as Response);
+
+            await state.saveSite(false);
+
+            expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+            const call = vi.mocked(globalThis.fetch).mock.calls[0];
+            expect(call).toBeDefined();
+            const [url, options] = call!;
+            expect(url).toBe('/api/save');
+            const body = JSON.parse(options!.body as string);
+            expect(body.initHashContent).toBe('oldhash123');
+        });
+
+        it('updates initHashContent on successful save', async () => {
+            state.initHashContent = 'oldhash123';
+            state.password = 'mypassword';
+
+            vi.mocked(globalThis.fetch).mockResolvedValue({
+                ok: true,
+                json: async () => ({ status: 'success', currentHashContent: 'newhash456' })
+            } as Response);
+
+            await state.saveSite(false);
+
+            expect(state.initHashContent).toBe('newhash456');
+            expect(state.remote.currentHashContent).toBe('newhash456');
+        });
+
+        it('does not mutate local remote hash state on overwrite/conflict responses', async () => {
+            state.initHashContent = 'oldhash123';
+            state.remote.currentHashContent = 'oldhash123';
+            state.password = 'mypassword';
+
+            vi.mocked(globalThis.fetch).mockResolvedValue({
+                ok: true,
+                json: async () => ({ status: 'error', message: 'Site was modified in the meantime.' })
+            } as Response);
+
+            await state.saveSite(false);
+
+            expect(state.initHashContent).toBe('oldhash123');
+            expect(state.remote.currentHashContent).toBe('oldhash123');
         });
     });
 });

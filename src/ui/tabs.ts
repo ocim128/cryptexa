@@ -493,15 +493,6 @@ export function addTab(
         a.textContent = getTitleFromContent("");
     }
 
-    let rafId = 0;
-    ta.addEventListener("input", () => {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = requestAnimationFrame(() => {
-            rafId = 0;
-            updateGutter();
-        });
-    });
-
     let lastScrollTs = 0;
     ta.addEventListener("scroll", () => {
         const now = performance.now ? performance.now() : Date.now();

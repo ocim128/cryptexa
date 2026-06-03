@@ -186,9 +186,10 @@ function initLanding(): void {
 
     on(form, "submit", (event) => {
         event.preventDefault();
-        const nextSite = normalizeWorkspaceId(input.value || "");
+        const rawSite = input.value || "";
+        const nextSite = normalizeWorkspaceId(rawSite);
         if (!nextSite) {
-            toast(WORKSPACE_ID_REQUIREMENTS, "warning", 2400);
+            toast(rawSite.trim() ? WORKSPACE_ID_REQUIREMENTS : "Enter a workspace id.", "warning", 2400);
             input.focus();
             return;
         }
@@ -262,7 +263,7 @@ function setupStatusTracking(): void {
 
 async function checkServerHealth(): Promise<boolean> {
     try {
-        const response = await fetchWithRetry("/health", { method: "GET" }, 1);
+        const response = await fetchWithRetry("/health", { method: "GET" }, 1, 5000);
         return response.ok;
     } catch {
         return false;

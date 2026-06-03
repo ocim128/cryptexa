@@ -260,7 +260,10 @@ function renderResults(): void {
     if (!resultsContainer) return;
 
     if (searchState.results.length === 0) {
-        resultsContainer.innerHTML = `<div class="search-hint">${getSearchMessage()}</div>`;
+        const emptyClass = searchState.query.length >= MIN_SEARCH_QUERY_LENGTH
+            ? "search-hint search-no-results"
+            : "search-hint";
+        resultsContainer.innerHTML = `<div class="${emptyClass}">${getSearchMessage()}</div>`;
         return;
     }
 
@@ -321,6 +324,13 @@ function handleSearchInput(): void {
     }, SEARCH_INPUT_DEBOUNCE_MS);
 }
 
+function flushPendingSearch(): void {
+    if (!searchInput || !searchInputTimer) return;
+    clearTimeout(searchInputTimer);
+    searchInputTimer = null;
+    runSearch(searchInput.value);
+}
+
 export function goToResult(result: SearchResult): void {
     const tabHeader = qs<HTMLElement>(`.tab-header[data-tab-id="${result.tabId}"]`);
     if (!tabHeader) {
@@ -351,6 +361,7 @@ export function goToResult(result: SearchResult): void {
 function handleSearchKeydown(event: KeyboardEvent): void {
     if (event.key === "ArrowDown") {
         event.preventDefault();
+        flushPendingSearch();
         if (searchState.results.length === 0) return;
         searchState.selectedIndex = Math.min(searchState.selectedIndex + 1, searchState.results.length - 1);
         updateSelectedResult();
@@ -360,6 +371,7 @@ function handleSearchKeydown(event: KeyboardEvent): void {
 
     if (event.key === "ArrowUp") {
         event.preventDefault();
+        flushPendingSearch();
         if (searchState.results.length === 0) return;
         searchState.selectedIndex = Math.max(searchState.selectedIndex - 1, 0);
         updateSelectedResult();
@@ -369,6 +381,7 @@ function handleSearchKeydown(event: KeyboardEvent): void {
 
     if (event.key === "Enter") {
         event.preventDefault();
+        flushPendingSearch();
         const selected = searchState.results[searchState.selectedIndex];
         if (selected) {
             goToResult(selected);

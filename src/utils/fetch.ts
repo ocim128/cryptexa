@@ -8,12 +8,14 @@
  * @param url - URL to fetch
  * @param options - Fetch options
  * @param maxRetries - Maximum number of retries (default: 3)
+ * @param timeoutMs - Request timeout in milliseconds (default: 60000)
  * @returns Promise resolving to Response
  */
 export async function fetchWithRetry(
     url: string,
     options: RequestInit = {},
-    maxRetries: number = 3
+    maxRetries: number = 3,
+    timeoutMs: number = 60000
 ): Promise<Response> {
     let lastError: Error | null = null;
 
@@ -21,7 +23,7 @@ export async function fetchWithRetry(
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
             const controller = new AbortController();
-            timeoutId = setTimeout(() => controller.abort(), 60000);
+            timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
             const response = await fetch(url, {
                 ...options,
