@@ -83,9 +83,19 @@ describe('ClientState', () => {
             expect(state.initHashContent).toBe('remotehash123');
         });
 
-        it('computes a hash when no remote hash exists', () => {
+        it('leaves the token empty for a new site', () => {
+            state.remote.isNew = true;
+            state.remote.currentHashContent = null;
+
+            state.setInitHashContent();
+
+            expect(state.initHashContent).toBeNull();
+        });
+
+        it('computes a fallback hash for an existing site with no remote hash', () => {
             state.content = 'my content';
             state.password = 'mypass';
+            state.remote.isNew = false;
             state.remote.currentHashContent = null;
 
             state.setInitHashContent();
@@ -118,6 +128,26 @@ describe('ClientState', () => {
             expect(url).toBe('/api/save');
             const body = JSON.parse(options!.body as string);
             expect(body.initHashContent).toBe('oldhash123');
+        });
+
+        it('sends an empty initHashContent on first save of a new site', async () => {
+            state.remote.isNew = true;
+            state.remote.currentHashContent = null;
+            state.setInitHashContent();
+            state.password = 'mypassword';
+
+            vi.mocked(globalThis.fetch).mockResolvedValue({
+                ok: true,
+                json: async () => ({ status: 'success', currentHashContent: 'newhash456' })
+            } as Response);
+
+            await state.saveSite(false);
+
+            const call = vi.mocked(globalThis.fetch).mock.calls[0];
+            expect(call).toBeDefined();
+            const [, options] = call!;
+            const body = JSON.parse(options!.body as string);
+            expect(body.initHashContent).toBe('');
         });
 
         it('updates initHashContent on successful save', async () => {

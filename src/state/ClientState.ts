@@ -168,6 +168,8 @@ export class ClientState {
     setInitHashContent(): void {
         if (this.remote.currentHashContent) {
             this.initHashContent = this.remote.currentHashContent;
+        } else if (this.remote.isNew) {
+            this.initHashContent = null;
         } else {
             this.initHashContent = this.computeHashContentForDBVersion(
                 this.content,
