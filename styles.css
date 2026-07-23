@@ -649,7 +649,7 @@ button {
   padding: var(--editor-pad-y) var(--gutter-pad-right) var(--editor-pad-y) 8px;
   font-family: var(--editor-font-family);
   font-size: 12px;
-  line-height: var(--editor-line-height);
+  line-height: calc(var(--editor-font-size) * var(--editor-line-height));
   z-index: 2;
 }
 
@@ -675,6 +675,7 @@ button {
   font-family: var(--editor-font-family);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
+  white-space: pre;
   caret-color: var(--accent);
   overflow: auto;
   position: relative;

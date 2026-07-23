@@ -191,6 +191,25 @@ test.describe('Editor Features', () => {
         await expect(gutter).toHaveAttribute('data-lines', /1[\s\S]*5/);
     });
 
+    test('should keep long logical lines on one visual row', async ({ page }) => {
+        const textarea = page.locator('.textarea-contents').first();
+        const gutter = page.locator('.line-gutter').first();
+        const longLine = 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(8);
+
+        await textarea.fill(`${longLine}\nSecond line`);
+
+        const metrics = await textarea.evaluate((element) => ({
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight,
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth
+        }));
+
+        expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+        expect(metrics.scrollHeight).toBe(metrics.clientHeight);
+        await expect(gutter).toHaveAttribute('data-lines', '1\n2');
+    });
+
     test('should show placeholder when empty', async ({ page }) => {
         const textarea = page.locator('.textarea-contents').first();
         const placeholder = await textarea.getAttribute('placeholder');
