@@ -68,6 +68,22 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false
 }));
 
+if (NODE_ENV === 'production') {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+        const start = Date.now();
+        res.on('finish', () => {
+            console.log(JSON.stringify({
+                timestamp: new Date().toISOString(),
+                method: req.method,
+                url: redactRequestUrl(req.originalUrl),
+                status: res.statusCode,
+                durationMs: Date.now() - start
+            }));
+        });
+        next();
+    });
+}
+
 function setStaticCacheHeaders(res: Response, filePath: string): void {
     const baseName = path.basename(filePath);
     if (baseName === 'index.html') {
@@ -173,10 +189,12 @@ function loadDB(): FileDB {
         if (fs.existsSync(backupFile)) {
             try {
                 const raw = fs.readFileSync(backupFile, 'utf-8');
+                const db = JSON.parse(raw) as FileDB;
                 console.warn(`Database file missing; loaded backup ${backupFile}`);
-                return JSON.parse(raw) as FileDB;
+                return db;
             } catch (error) {
                 console.error('Database backup load error:', error);
+                throw new Error(`Database backup could not be loaded: ${backupFile}`);
             }
         }
         return { sites: {} };
@@ -188,11 +206,12 @@ function loadDB(): FileDB {
     } catch (error) {
         try {
             const raw = fs.readFileSync(backupFile, 'utf-8');
+            const db = JSON.parse(raw) as FileDB;
             console.warn(`Database file could not be read; loaded backup ${backupFile}`);
-            return JSON.parse(raw) as FileDB;
+            return db;
         } catch {
             console.error('Database load error:', error);
-            return { sites: {} };
+            throw new Error(`Database and backup could not be loaded: ${DB_FILE}`);
         }
     }
 }
@@ -317,7 +336,9 @@ class Database {
             } : null;
         }
 
-        return this.fileDb.sites[siteKey] || null;
+        return Object.prototype.hasOwnProperty.call(this.fileDb.sites, siteKey)
+            ? this.fileDb.sites[siteKey] || null
+            : null;
     }
 
     async saveSiteIfUnchanged(siteKey: string, initHashContent: string, data: SiteData): Promise<boolean> {
@@ -360,13 +381,14 @@ class Database {
         }
 
         return this.runFileMutation(async () => {
-            const existing = this.fileDb.sites[siteKey] || null;
+            const existing = await this.getSite(siteKey);
             if (existing && (existing.currentHashContent || '') !== initHashContent) {
                 return false;
             }
 
-            this.fileDb.sites[siteKey] = data;
-            await fileDatabaseStore.save(this.fileDb);
+            const next = { sites: { ...this.fileDb.sites, [siteKey]: data } };
+            await fileDatabaseStore.save(next);
+            this.fileDb = next;
             return true;
         });
     }
@@ -394,7 +416,7 @@ class Database {
         }
 
         return this.runFileMutation(async () => {
-            const existing = this.fileDb.sites[siteKey] || null;
+            const existing = await this.getSite(siteKey);
             if (!existing) {
                 return true;
             }
@@ -403,8 +425,10 @@ class Database {
                 return false;
             }
 
-            delete this.fileDb.sites[siteKey];
-            await fileDatabaseStore.save(this.fileDb);
+            const next = { sites: { ...this.fileDb.sites } };
+            delete next.sites[siteKey];
+            await fileDatabaseStore.save(next);
+            this.fileDb = next;
             return true;
         });
     }
@@ -439,17 +463,6 @@ async function initializeDatabase(): Promise<void> {
 
 app.use(compression());
 app.use(express.json({ limit: MAX_CONTENT_SIZE }));
-
-if (NODE_ENV === 'production') {
-    app.use((req: Request, res: Response, next: NextFunction) => {
-        const start = Date.now();
-        res.on('finish', () => {
-            const duration = Date.now() - start;
-            console.log(`${new Date().toISOString()} ${req.method} ${redactRequestUrl(req.url)} ${res.statusCode} ${duration}ms`);
-        });
-        next();
-    });
-}
 
 for (const [route, fileName] of STATIC_ASSETS) {
     app.get(route, (_req: Request, res: Response) => {
@@ -486,8 +499,7 @@ app.get('/', (_req: Request, res: Response) => {
 });
 
 app.get('/:site', (req: Request, res: Response, next: NextFunction) => {
-    const site = req.params.site;
-    if (!site || site === 'api' || site.includes('.')) {
+    if (!normalizeSiteKey(req.params.site).ok) {
         return next();
     }
 

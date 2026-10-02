@@ -58,6 +58,13 @@ test.describe('Landing Page', () => {
         await expect(page.locator('.toast')).toContainText('Enter a workspace id.');
     });
 
+    test('should open a workspace whose ID contains a dot', async ({ page }) => {
+        await page.locator('#landing-site').fill('team.notes');
+        await page.locator('#landing-open').click();
+        await expect(page).toHaveURL(/\/team\.notes$/);
+        await expect(page.locator('.textarea-contents').first()).toBeVisible();
+    });
+
     test('should display security information', async ({ page }) => {
         const landingMeta = page.locator('.landing-meta');
         await expect(landingMeta).toBeVisible();

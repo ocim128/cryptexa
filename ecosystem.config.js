@@ -2,11 +2,12 @@ module.exports = {
   apps: [{
     name: 'cryptexa',
     script: 'server.js',
-    instances: 'max',
-    exec_mode: 'cluster',
+    instances: 1,
+    exec_mode: 'fork',
     env: {
       NODE_ENV: 'development',
       PORT: 3000,
+      DB_TYPE: 'file',
       DB_FILE: './data/cryptexa.json',
       MAX_CONTENT_SIZE: '5mb',
       RATE_LIMIT_MAX: 1000,
@@ -16,6 +17,7 @@ module.exports = {
     env_production: {
       NODE_ENV: 'production',
       PORT: 3000,
+      DB_TYPE: 'file',
       DB_FILE: './data/cryptexa.json',
       MAX_CONTENT_SIZE: '1mb',
       RATE_LIMIT_MAX: 100,

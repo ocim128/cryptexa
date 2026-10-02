@@ -158,6 +158,7 @@ export const openDeletePasswordDialog = ({ onOk }: DeletePasswordDialogConfig): 
  */
 export const openNewPasswordDialog = ({ title, onSave }: NewPasswordDialogConfig): void => {
     const dlg = qs<HTMLDialogElement>("#dialog-new-password")!;
+    if (dlg.open) return;
     const titleEl = qs<HTMLElement>("#dialog-new-password-title")!;
     const p1 = qs<HTMLInputElement>("#newpassword1")!;
     const p2 = qs<HTMLInputElement>("#newpassword2")!;

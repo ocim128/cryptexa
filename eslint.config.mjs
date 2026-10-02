@@ -9,6 +9,7 @@ export default [
             "dist/**",
             "public/**",
             ".vercel/**",
+            ".kilo/**",
             "_archive/**",
             "coverage/**",
             "playwright-report/**",

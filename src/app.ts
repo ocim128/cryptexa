@@ -198,7 +198,6 @@ function initLanding(): void {
 }
 
 function updateButtonEnablement(isTextModified: boolean, isSiteNew: boolean): void {
-    const workspace = getState();
     const saveButton = qs<HTMLButtonElement>("#button-save");
     const saveNewButton = qs<HTMLButtonElement>("#button-savenew");
     const reloadButton = qs<HTMLButtonElement>("#button-reload");
@@ -211,7 +210,7 @@ function updateButtonEnablement(isTextModified: boolean, isSiteNew: boolean): vo
     reloadButton.disabled = false;
     deleteButton.disabled = Boolean(isSiteNew);
 
-    if (workspace.getInitialIsNew() === false && isTextModified) {
+    if (isTextModified) {
         window.onbeforeunload = () => "Unsaved changes will be lost.";
     } else {
         window.onbeforeunload = null;
@@ -666,13 +665,14 @@ async function finishInitialization(shouldSkipSettingContent?: boolean): Promise
     updateButtonEnablement(workspace.getIsTextModified(), workspace.getIsNew());
     updateStatusIndicator("ready", "Ready");
     focusActiveTextarea();
-    ignoreInputEvent = true;
 
-    if (shouldSkipSettingContent !== true) {
-        await setContentOfTabs(workspace.getContent(), workspace);
-    } else {
+    if (shouldSkipSettingContent === true) {
         clearAllModified();
+        return;
     }
+
+    ignoreInputEvent = true;
+    await setContentOfTabs(workspace.getContent(), workspace);
 
     setTimeout(() => {
         ignoreInputEvent = false;

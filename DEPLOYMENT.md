@@ -85,7 +85,7 @@ docker run -d \
 
 **Pros**: Full control, cost-effective for high traffic
 
-1. Install Node.js 18+
+1. Install a maintained Node.js 22.x release (22.12.0+) or Node.js 24+
 2. Clone repository
 3. Install dependencies: `npm ci`
 4. Build production assets: `npm run build`
@@ -100,6 +100,8 @@ pm2 start ecosystem.config.js
 pm2 startup
 pm2 save
 ```
+
+The supplied PM2 configuration explicitly uses file storage in one process. File storage keeps its database and write queue in process memory; running multiple workers against the same file can lose updates. To use PM2 clustering, configure MongoDB storage with `DB_TYPE=mongodb` and `MONGODB_URI` before increasing the instance count.
 
 ## Reverse Proxy Configuration
 

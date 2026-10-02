@@ -165,7 +165,7 @@ if (esbuild && fs.existsSync('server-app.ts')) {
     bundle: true,
     packages: 'external',
     outfile: path.join(BUILD_DIR, 'server.js'),
-    target: 'node18',
+    target: 'node22',
     format: 'cjs',
   });
   console.log('Compiled dist/server.js');

@@ -39,6 +39,8 @@ module.exports = defineConfig({
         env: {
             ...process.env,
             PORT,
+            NODE_ENV: 'production',
+            RATE_LIMIT_MAX: '1000',
             DB_TYPE: 'file',
             DB_FILE: 'test-results/e2e-db.json',
         },

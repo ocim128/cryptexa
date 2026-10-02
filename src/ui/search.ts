@@ -105,8 +105,8 @@ function findLineIndex(lineStarts: number[], position: number): number {
 
 function getLineText(content: string, lineStarts: number[], lineIndex: number): string {
     const start = lineStarts[lineIndex] ?? 0;
-    const nextStart = lineStarts[lineIndex + 1] ?? content.length;
-    const end = nextStart > start ? nextStart - 1 : content.length;
+    const nextStart = lineStarts[lineIndex + 1];
+    const end = nextStart === undefined ? content.length : nextStart - 1;
     return content.slice(start, end);
 }
 

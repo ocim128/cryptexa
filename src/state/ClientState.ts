@@ -74,6 +74,8 @@ export class ClientState {
     mobileAppMetadataTabContent: string;
 
     remote: RemoteState;
+    private editRevision = 0;
+    private isSaving = false;
 
     // Callbacks for UI updates
     onButtonEnablementChange: ClientStateCallbacks['onButtonEnablementChange'];
@@ -139,6 +141,7 @@ export class ClientState {
     }
 
     updateIsTextModified(mod: boolean): void {
+        if (mod) this.editRevision++;
         if (this.isTextModified === mod) return;
         this.isTextModified = mod;
         if (this.onButtonEnablementChange) {
@@ -212,26 +215,28 @@ export class ClientState {
     }
 
     async saveSite(newPass: boolean | string): Promise<void> {
-        const executeSaveSite = async (passwordToUse: string): Promise<void> => {
-            this.content = await _getContentFromTabs(this);
-
-            const newHashContent = this.computeHashContentForDBVersion(
-                this.content,
-                passwordToUse,
-                this.expectedDBVersion
-            );
-
-            // Create new salt every save for portability; embed in ciphertext
-            const saltHex = randomHex(16);
-            const { ivHex, cipherHex } = await aesGcmEncryptHex(
-                String(this.content + this.siteHash),
-                passwordToUse,
-                saltHex
-            );
-            const eContentPayload = `${saltHex}:${ivHex}:${cipherHex}`;
-
+        if (this.isSaving) return;
+        const executeSaveSite = async (passwordToUse: string): Promise<boolean> => {
+            if (this.isSaving) return false;
+            this.isSaving = true;
+            const savedRevision = this.editRevision;
             showLoader(true);
             try {
+                const content = await _getContentFromTabs(this);
+                const newHashContent = this.computeHashContentForDBVersion(
+                    content,
+                    passwordToUse,
+                    this.expectedDBVersion
+                );
+
+                // Create new salt every save for portability; embed in ciphertext
+                const saltHex = randomHex(16);
+                const { ivHex, cipherHex } = await aesGcmEncryptHex(
+                    String(content + this.siteHash),
+                    passwordToUse,
+                    saltHex
+                );
+                const eContentPayload = `${saltHex}:${ivHex}:${cipherHex}`;
                 const res = await fetchWithRetry("/api/save", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -255,16 +260,23 @@ export class ClientState {
 
                 if (data.status === "success") {
                     toast("Saved.", "success", 1500);
+                    this.content = content;
                     this.remote.isNew = false;
                     this.remote.eContent = eContentPayload;
                     this.remote.currentHashContent = data.currentHashContent || newHashContent;
                     this.initHashContent = this.remote.currentHashContent;
                     this.password = passwordToUse;
                     this.currentDBVersion = this.expectedDBVersion;
-                    this.isTextModified = false;
-                    if (this.onStatusChange) this.onStatusChange("ready", "Ready");
-                    if (this.onLastSavedUpdate) this.onLastSavedUpdate();
-                    if (this.onFinishInitialization) this.onFinishInitialization(true);
+                    this.isTextModified = this.editRevision !== savedRevision;
+                    if (this.isTextModified) {
+                        if (this.onButtonEnablementChange) this.onButtonEnablementChange(true, false);
+                        if (this.onStatusChange) this.onStatusChange("modified", "Modified");
+                    } else {
+                        if (this.onStatusChange) this.onStatusChange("ready", "Ready");
+                        if (this.onLastSavedUpdate) this.onLastSavedUpdate();
+                        if (this.onFinishInitialization) this.onFinishInitialization(true);
+                    }
+                    return true;
                 } else if (data.message) {
                     if (data.message.includes("modified in the meantime")) {
                         toast("Save failed. Another session updated this workspace. Reload and try again.", "error", 5000);
@@ -276,6 +288,7 @@ export class ClientState {
                     toast("Save failed.", "error", 2500);
                     _focusActiveTextarea();
                 }
+                if (this.onStatusChange) this.onStatusChange("error", "Save failed");
             } catch (error) {
                 console.error('Save operation failed:', error);
                 let errorMessage = "Save failed.";
@@ -290,10 +303,13 @@ export class ClientState {
                 }
 
                 toast(errorMessage, "error", 2500);
+                if (this.onStatusChange) this.onStatusChange("error", "Save failed");
                 _focusActiveTextarea();
             } finally {
+                this.isSaving = false;
                 showLoader(false);
             }
+            return false;
         };
 
         if (newPass === true) {
@@ -310,8 +326,7 @@ export class ClientState {
                         hideHint("#passwords-empty");
                         return false;
                     }
-                    await executeSaveSite(pass1);
-                    return true;
+                    return executeSaveSite(pass1);
                 }
             });
         } else {

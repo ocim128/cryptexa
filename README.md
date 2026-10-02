@@ -1,7 +1,7 @@
 # 🔐 Cryptexa - Secure Encrypted Notes
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D%2018.0.0-brightgreen)](https://nodejs.org/)
+[![Node.js Version](https://img.shields.io/badge/node-22.12%2B%20%7C%2024%2B-brightgreen)](https://nodejs.org/)
 [![Production Ready](https://img.shields.io/badge/production-ready-green)](https://github.com/yourusername/cryptexa)
 
 A **production-ready**, secure, client-side encrypted note-taking application with advanced security features, performance optimizations, and comprehensive deployment support.
@@ -124,7 +124,7 @@ Use the included multi-stage [Dockerfile](Dockerfile). It installs dev dependenc
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18.0.0 or higher
+- Node.js 22.12.0+ on the 22.x release line, or Node.js 24+
 - npm or yarn package manager
 
 ### Installation
@@ -195,7 +195,7 @@ Two options:
 5. Deployment settings:
    - Build Command: `npm install`
    - Start Command: `npm start`
-   - Node version: `>=18.x` (handled by `engines` in package.json)
+   - Node version: `^22.12.0 || >=24.0.0` (handled by `engines` in package.json)
 6. Deploy.
 
 ### Manual Web Service

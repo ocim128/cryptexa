@@ -180,6 +180,41 @@ describe('ClientState', () => {
             expect(state.initHashContent).toBe('oldhash123');
             expect(state.remote.currentHashContent).toBe('oldhash123');
         });
+
+        it('preserves newer edits when an older snapshot finishes saving', async () => {
+            state.password = 'mypassword';
+            state.updateIsTextModified(true);
+            state.onStatusChange = vi.fn();
+            state.onLastSavedUpdate = vi.fn();
+            state.onFinishInitialization = vi.fn();
+            let finishRequest!: (response: Response) => void;
+            vi.mocked(globalThis.fetch).mockImplementation(() => new Promise((resolve) => { finishRequest = resolve; }));
+            const save = state.saveSite(false);
+            await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+            state.updateIsTextModified(true);
+            finishRequest({ ok: true, json: async () => ({ status: 'success', currentHashContent: 'saved-snapshot' }) } as Response);
+            await save;
+            expect(state.initHashContent).toBe('saved-snapshot');
+            expect(state.getIsTextModified()).toBe(true);
+            expect(state.onStatusChange).toHaveBeenLastCalledWith('modified', 'Modified');
+            expect(state.onLastSavedUpdate).not.toHaveBeenCalled();
+            expect(state.onFinishInitialization).not.toHaveBeenCalled();
+        });
+
+        it('allows only one save in flight and accepts another after it finishes', async () => {
+            state.password = 'mypassword';
+            let finishRequest!: (response: Response) => void;
+            vi.mocked(globalThis.fetch).mockImplementation(() => new Promise((resolve) => { finishRequest = resolve; }));
+            const firstSave = state.saveSite(false);
+            await state.saveSite(false);
+            await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+            const response = { ok: true, json: async () => ({ status: 'success', currentHashContent: 'saved' }) } as Response;
+            finishRequest(response);
+            await firstSave;
+            vi.mocked(globalThis.fetch).mockResolvedValue(response);
+            await state.saveSite(false);
+            expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+        });
     });
 });
 

@@ -175,4 +175,22 @@ test.describe('Password Dialogs', () => {
         await expect(passwordDialog).toBeVisible();
         await expect(page.locator('.toast').last()).toContainText('Incorrect password.');
     });
+
+    test('should protect unsaved edits after the first save of a new workspace', async ({ page }) => {
+        const site = `unsaved-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await page.goto(`/${site}`);
+        await page.waitForLoadState('networkidle');
+        const textarea = page.locator('.textarea-contents').first();
+        await textarea.fill('First saved snapshot');
+        await page.locator('#button-save').click();
+        const dialog = page.locator('#dialog-new-password');
+        await page.locator('#newpassword1').fill('correct-password');
+        await page.locator('#newpassword2').fill('correct-password');
+        await dialog.locator('button[value="ok"]').click();
+        await expect(dialog).toBeHidden();
+        await expect.poll(() => page.evaluate(() => window.onbeforeunload)).toBeNull();
+        await textarea.fill('New unsaved changes');
+        await expect.poll(() => page.evaluate(() => typeof window.onbeforeunload)).toBe('function');
+        await expect(page.locator('#button-save')).toBeEnabled();
+    });
 });

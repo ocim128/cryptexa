@@ -22,7 +22,7 @@ This project and everyone participating in it is governed by our commitment to c
 
 ### Prerequisites
 
-- Node.js 18.0.0 or higher
+- Node.js 22.12.0+ on the 22.x release line, or Node.js 24+
 - npm or yarn package manager
 - Git
 - A code editor (VS Code recommended)

@@ -1,4 +1,4 @@
-FROM node:18-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force
 
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 ENV NODE_ENV=production
